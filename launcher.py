@@ -257,20 +257,21 @@ class LauncherApp:
         with open("temp_context.txt", "w", encoding="utf-8") as f:
             f.write(context_text)
 
-        # Hide launcher window
-        self.root.withdraw()
+        # Destroy launcher window completely to avoid Tkinter conflicts
+        self.root.destroy()
 
         try:
             # Import and run main application directly (PyInstaller compatible)
             import main
             main.main()
         except Exception as e:
+            # Create new temporary root for error message since original is destroyed
+            import tkinter as tk
+            err_root = tk.Tk()
+            err_root.withdraw()
             messagebox.showerror("Error", f"Failed to start main application: {str(e)}")
-            self.root.deiconify()
+            err_root.destroy()
             return
-
-        # Exit application after main window closes
-        self.root.quit()
 
     def run(self):
         self.root.mainloop()

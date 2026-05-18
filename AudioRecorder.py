@@ -71,7 +71,7 @@ class AudioRecorder:
 
         # Use device's native sample rate and channels to avoid -9997 error
         sample_rate = int(self.device_info["defaultSampleRate"])
-        channels = int(self.device_info["maxInputChannels"]) if self.is_speaker else 1
+        channels = int(self.device_info["maxInputChannels"])
 
         # Open audio stream
         self.stream = self.p.open(
@@ -85,7 +85,7 @@ class AudioRecorder:
         )
 
         self.stream.start_stream()
-        print(f"[INFO] Started recording from {'speaker' if self.is_speaker else 'microphone'} at {sample_rate}Hz")
+        print(f"[INFO] Started recording from {'speaker' if self.is_speaker else 'microphone'} at {sample_rate}Hz, {channels} channel(s)")
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
         """Callback function for audio stream"""
@@ -106,7 +106,7 @@ class AudioRecorder:
         wav_buffer = io.BytesIO()
 
         with wave.open(wav_buffer, 'wb') as wf:
-            wf.setnchannels(int(self.device_info["maxInputChannels"]) if self.is_speaker else 1)
+            wf.setnchannels(int(self.device_info["maxInputChannels"]))
             wf.setsampwidth(self.p.get_sample_size(pyaudio.paInt16))
             wf.setframerate(int(self.device_info["defaultSampleRate"]))
             wf.writeframes(audio_data)

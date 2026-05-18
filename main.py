@@ -183,8 +183,15 @@ def main():
         except Exception as e:
             print(f"[WARNING] Failed to cleanup temp files: {e}")
 
-    # Register cleanup function
-    root.protocol("WM_DELETE_WINDOW", lambda: (cleanup_on_exit(), root.destroy()))
+    # Hard exit function to kill all threads and process
+    def hard_exit():
+        print("[INFO] Initiating hard exit...")
+        cleanup_on_exit()
+        try:
+            transcriber.close()
+        except:
+            pass
+        os._exit(0)  # Immediately terminates all threads and the process
 
     # Create stealth overlay manager
     overlay_manager = StealthOverlayManager()
@@ -200,6 +207,9 @@ def main():
         transcriber = AudioTranscriber(mic_recorder, speaker_recorder)
         transcriber.start()
 
+        # Register hard exit function
+        root.protocol("WM_DELETE_WINDOW", hard_exit)
+
         transcript_textbox, suggestion_textbox = create_ui_components(root, transcriber, llm_client, overlay_manager)
 
         print("READY")
@@ -209,18 +219,17 @@ def main():
         else:
             def update_transcript_no_llm():
                 transcript_string = transcriber.get_transcript()
-                write_in_textbox(transcript_textbox, transcript_string)
+                write_in_textbox(transcript_textbox, transcript_textbox)
                 transcript_textbox.after(300, update_transcript_no_llm)
             update_transcript_no_llm()
 
         root.mainloop()
 
-        # Final cleanup after mainloop exits
-        transcriber.close()
-        cleanup_on_exit()
-
     except Exception as e:
         print(f"[ERROR] Failed to initialize audio system: {e}")
+
+        # Register cleanup for error case
+        root.protocol("WM_DELETE_WINDOW", lambda: (cleanup_on_exit(), os._exit(0)))
 
         # Create minimal UI to show error
         transcript_textbox, suggestion_textbox = create_ui_components(root, None, llm_client, overlay_manager)
@@ -230,7 +239,6 @@ def main():
         write_in_textbox(suggestion_textbox, "Audio system unavailable")
 
         root.mainloop()
-        cleanup_on_exit()
 
 if __name__ == "__main__":
     main()
