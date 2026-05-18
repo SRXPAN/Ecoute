@@ -187,6 +187,19 @@ def main():
 
     root = ctk.CTk()
 
+    # Cleanup function to remove temp files on exit
+    def cleanup_on_exit():
+        print("[INFO] Cleaning up temporary files...")
+        try:
+            if os.path.exists("temp_context.txt"):
+                os.remove("temp_context.txt")
+                print("[INFO] Removed temp_context.txt")
+        except Exception as e:
+            print(f"[WARNING] Failed to cleanup temp files: {e}")
+
+    # Register cleanup function
+    root.protocol("WM_DELETE_WINDOW", lambda: (cleanup_on_exit(), root.destroy()))
+
     # Create stealth overlay manager
     overlay_manager = StealthOverlayManager()
     overlay_manager.create_overlay()
@@ -224,6 +237,9 @@ def main():
         update_transcript_no_llm()
 
     root.mainloop()
+
+    # Final cleanup after mainloop exits
+    cleanup_on_exit()
 
 if __name__ == "__main__":
     main()

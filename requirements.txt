@@ -6,3 +6,4 @@ python-dotenv
 sounddevice
 groq
 google-generativeai
+pyinstaller
