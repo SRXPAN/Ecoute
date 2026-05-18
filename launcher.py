@@ -130,36 +130,38 @@ class LauncherApp:
 
         llm_title = ctk.CTkLabel(
             llm_section,
-            text="LLM Configuration",
+            text="API Configuration",
             font=("Arial", 18, "bold")
         )
         llm_title.grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=10, sticky="w")
 
-        provider_label = ctk.CTkLabel(llm_section, text="Provider:", font=("Arial", 14))
-        provider_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        groq_label = ctk.CTkLabel(llm_section, text="Groq API Key (Transcription):", font=("Arial", 14))
+        groq_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
-        self.provider_dropdown = ctk.CTkComboBox(
-            llm_section,
-            values=["Groq (Whisper)", "OpenAI (Future)", "Gemini (Future)"],
-            width=400,
-            state="readonly"
-        )
-        self.provider_dropdown.set("Groq (Whisper)")
-        self.provider_dropdown.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
-
-        api_key_label = ctk.CTkLabel(llm_section, text="API Key:", font=("Arial", 14))
-        api_key_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
-
-        self.api_key_entry = ctk.CTkEntry(
+        self.groq_api_key_entry = ctk.CTkEntry(
             llm_section,
             width=400,
             show="*",
             placeholder_text="Enter your Groq API key"
         )
-        existing_key = os.getenv("GROQ_API_KEY", "")
-        if existing_key:
-            self.api_key_entry.insert(0, existing_key)
-        self.api_key_entry.grid(row=2, column=1, padx=10, pady=(5, 10), sticky="ew")
+        existing_groq_key = os.getenv("GROQ_API_KEY", "")
+        if existing_groq_key:
+            self.groq_api_key_entry.insert(0, existing_groq_key)
+        self.groq_api_key_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+
+        gemini_label = ctk.CTkLabel(llm_section, text="Gemini API Key (AI Assistant):", font=("Arial", 14))
+        gemini_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+
+        self.gemini_api_key_entry = ctk.CTkEntry(
+            llm_section,
+            width=400,
+            show="*",
+            placeholder_text="Enter your Gemini API key"
+        )
+        existing_gemini_key = os.getenv("GEMINI_API_KEY", "")
+        if existing_gemini_key:
+            self.gemini_api_key_entry.insert(0, existing_gemini_key)
+        self.gemini_api_key_entry.grid(row=2, column=1, padx=10, pady=(5, 10), sticky="ew")
 
         context_section = ctk.CTkFrame(main_frame)
         context_section.grid(row=3, column=0, sticky="ew", pady=(0, 20))
@@ -201,16 +203,22 @@ class LauncherApp:
         self.start_button.grid(row=4, column=0, pady=(10, 0), sticky="ew")
 
     def start_application(self):
-        api_key = self.api_key_entry.get().strip()
-        if not api_key:
-            messagebox.showerror("Error", "Please enter your API key")
+        groq_api_key = self.groq_api_key_entry.get().strip()
+        gemini_api_key = self.gemini_api_key_entry.get().strip()
+
+        if not groq_api_key:
+            messagebox.showerror("Error", "Please enter your Groq API key for transcription")
+            return
+
+        if not gemini_api_key:
+            messagebox.showerror("Error", "Please enter your Gemini API key for AI assistance")
             return
 
         context_text = self.context_textbox.get("0.0", "end-1c").strip()
         if not context_text:
             response = messagebox.askyesno(
                 "Warning",
-                "No interview context provided. Continue anyway?"
+                "No interview context provided. The AI assistant will provide generic responses. Continue anyway?"
             )
             if not response:
                 return
@@ -243,7 +251,8 @@ class LauncherApp:
             with open(env_file, "w") as f:
                 f.write("")
 
-        set_key(env_file, "GROQ_API_KEY", api_key)
+        set_key(env_file, "GROQ_API_KEY", groq_api_key)
+        set_key(env_file, "GEMINI_API_KEY", gemini_api_key)
         set_key(env_file, "MIC_DEVICE_INDEX", str(mic_index))
         set_key(env_file, "SPEAKER_DEVICE_INDEX", str(speaker_index))
 

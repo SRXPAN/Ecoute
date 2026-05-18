@@ -138,10 +138,19 @@ class AudioTranscriber:
 
     def get_transcript(self):
         combined_transcript = list(merge(
-            self.transcript_data["You"], self.transcript_data["Speaker"], 
+            self.transcript_data["You"], self.transcript_data["Speaker"],
             key=lambda x: x[1], reverse=True))
         combined_transcript = combined_transcript[:MAX_PHRASES]
         return "".join([t[0] for t in combined_transcript])
+
+    def get_latest_speaker_text(self):
+        """Get the most recent speaker (interviewer) text for AI processing"""
+        if self.transcript_data["Speaker"]:
+            latest = self.transcript_data["Speaker"][0]
+            text = latest[0]
+            text = text.replace("Speaker: [", "").replace("]\n\n", "").strip()
+            return text
+        return ""
     
     def clear_transcript_data(self):
         self.transcript_data["You"].clear()
