@@ -139,12 +139,6 @@ def create_ui_components(root, transcriber, llm_client, overlay_manager):
     return transcript_textbox, suggestion_textbox
 
 def main():
-    try:
-        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except FileNotFoundError:
-        print("ERROR: The ffmpeg library is not installed. Please install ffmpeg and try again.")
-        return
-
     load_dotenv()
 
     mic_device_index = os.getenv("MIC_DEVICE_INDEX")
@@ -197,32 +191,46 @@ def main():
     overlay_manager.create_overlay()
     print("[INFO] Stealth overlay created")
 
-    # Create audio recorders
-    mic_recorder = AudioRecorder.DefaultMicRecorder(device_index=mic_device_index)
-    speaker_recorder = AudioRecorder.DefaultSpeakerRecorder(device_index=speaker_device_index)
+    # Create audio recorders with error handling
+    try:
+        mic_recorder = AudioRecorder.DefaultMicRecorder(device_index=mic_device_index)
+        speaker_recorder = AudioRecorder.DefaultSpeakerRecorder(device_index=speaker_device_index)
 
-    # Create transcriber with new pure Groq API pipeline
-    transcriber = AudioTranscriber(mic_recorder, speaker_recorder)
-    transcriber.start()
+        # Create transcriber with new pure Groq API pipeline
+        transcriber = AudioTranscriber(mic_recorder, speaker_recorder)
+        transcriber.start()
 
-    transcript_textbox, suggestion_textbox = create_ui_components(root, transcriber, llm_client, overlay_manager)
+        transcript_textbox, suggestion_textbox = create_ui_components(root, transcriber, llm_client, overlay_manager)
 
-    print("READY")
+        print("READY")
 
-    if llm_client:
-        update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager)
-    else:
-        def update_transcript_no_llm():
-            transcript_string = transcriber.get_transcript()
-            write_in_textbox(transcript_textbox, transcript_string)
-            transcript_textbox.after(300, update_transcript_no_llm)
-        update_transcript_no_llm()
+        if llm_client:
+            update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager)
+        else:
+            def update_transcript_no_llm():
+                transcript_string = transcriber.get_transcript()
+                write_in_textbox(transcript_textbox, transcript_string)
+                transcript_textbox.after(300, update_transcript_no_llm)
+            update_transcript_no_llm()
 
-    root.mainloop()
+        root.mainloop()
 
-    # Final cleanup after mainloop exits
-    transcriber.close()
-    cleanup_on_exit()
+        # Final cleanup after mainloop exits
+        transcriber.close()
+        cleanup_on_exit()
+
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize audio system: {e}")
+
+        # Create minimal UI to show error
+        transcript_textbox, suggestion_textbox = create_ui_components(root, None, llm_client, overlay_manager)
+
+        error_message = f"❌ Audio Initialization Failed\n\n{str(e)}\n\nPossible causes:\n• Invalid audio device selected\n• Audio device disconnected\n• Sample rate not supported\n\nPlease restart and select different audio devices."
+        write_in_textbox(transcript_textbox, error_message)
+        write_in_textbox(suggestion_textbox, "Audio system unavailable")
+
+        root.mainloop()
+        cleanup_on_exit()
 
 if __name__ == "__main__":
     main()

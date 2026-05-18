@@ -1,5 +1,4 @@
 numpy
-Wave
 customtkinter
 PyAudioWPatch
 python-dotenv

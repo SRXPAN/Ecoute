@@ -6,9 +6,7 @@ from datetime import datetime
 from queue import Queue
 
 CHUNK_SIZE = 1024
-SAMPLE_RATE = 16000
 RECORD_SECONDS = 3
-CHANNELS = 1
 SAMPLE_WIDTH = 2  # 16-bit audio
 
 class AudioRecorder:
@@ -71,11 +69,15 @@ class AudioRecorder:
 
         self.is_recording = True
 
+        # Use device's native sample rate and channels to avoid -9997 error
+        sample_rate = int(self.device_info["defaultSampleRate"])
+        channels = int(self.device_info["maxInputChannels"]) if self.is_speaker else 1
+
         # Open audio stream
         self.stream = self.p.open(
             format=pyaudio.paInt16,
-            channels=int(self.device_info["maxInputChannels"]) if self.is_speaker else CHANNELS,
-            rate=int(self.device_info["defaultSampleRate"]) if self.is_speaker else SAMPLE_RATE,
+            channels=channels,
+            rate=sample_rate,
             input=True,
             input_device_index=self.device_info["index"],
             frames_per_buffer=CHUNK_SIZE,
@@ -83,7 +85,7 @@ class AudioRecorder:
         )
 
         self.stream.start_stream()
-        print(f"[INFO] Started recording from {'speaker' if self.is_speaker else 'microphone'}")
+        print(f"[INFO] Started recording from {'speaker' if self.is_speaker else 'microphone'} at {sample_rate}Hz")
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
         """Callback function for audio stream"""
@@ -104,9 +106,9 @@ class AudioRecorder:
         wav_buffer = io.BytesIO()
 
         with wave.open(wav_buffer, 'wb') as wf:
-            wf.setnchannels(int(self.device_info["maxInputChannels"]) if self.is_speaker else CHANNELS)
+            wf.setnchannels(int(self.device_info["maxInputChannels"]) if self.is_speaker else 1)
             wf.setsampwidth(self.p.get_sample_size(pyaudio.paInt16))
-            wf.setframerate(int(self.device_info["defaultSampleRate"]) if self.is_speaker else SAMPLE_RATE)
+            wf.setframerate(int(self.device_info["defaultSampleRate"]))
             wf.writeframes(audio_data)
 
         wav_buffer.seek(0)
