@@ -10,12 +10,13 @@ import subprocess
 import os
 from dotenv import load_dotenv
 from LLMClient import LLMClient
+from StealthOverlay import StealthOverlayManager
 
 def write_in_textbox(textbox, text):
     textbox.delete("0.0", "end")
     textbox.insert("0.0", text)
 
-def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client):
+def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager):
     transcript_string = transcriber.get_transcript()
     write_in_textbox(transcript_textbox, transcript_string)
 
@@ -26,19 +27,24 @@ def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, ll
 
             threading.Thread(
                 target=get_ai_suggestion,
-                args=(latest_speaker_text, suggestion_textbox, llm_client),
+                args=(latest_speaker_text, suggestion_textbox, llm_client, overlay_manager),
                 daemon=True
             ).start()
 
-    transcript_textbox.after(300, update_transcript_UI, transcriber, transcript_textbox, suggestion_textbox, llm_client)
+    transcript_textbox.after(300, update_transcript_UI, transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager)
 
-def get_ai_suggestion(interviewer_question, suggestion_textbox, llm_client):
+def get_ai_suggestion(interviewer_question, suggestion_textbox, llm_client, overlay_manager):
     try:
         suggestion_textbox.delete("0.0", "end")
         suggestion_textbox.insert("0.0", "🤔 Thinking...\n")
 
         full_response = ""
-        for token in llm_client.get_suggestion(interviewer_question):
+        response_generator = llm_client.get_suggestion(interviewer_question)
+
+        # Stream to both the main UI and the stealth overlay
+        overlay_manager.stream_suggestions(llm_client.get_suggestion(interviewer_question))
+
+        for token in response_generator:
             full_response += token
             suggestion_textbox.delete("0.0", "end")
             suggestion_textbox.insert("0.0", full_response)
@@ -48,8 +54,9 @@ def get_ai_suggestion(interviewer_question, suggestion_textbox, llm_client):
         print(f"[ERROR] Failed to get AI suggestion: {e}")
         suggestion_textbox.delete("0.0", "end")
         suggestion_textbox.insert("0.0", "❌ AI suggestion failed")
+        overlay_manager.update_suggestions("❌ AI suggestion failed", clear=True)
 
-def clear_context(transcriber, speaker_queue, mic_queue, suggestion_textbox, llm_client):
+def clear_context(transcriber, speaker_queue, mic_queue, suggestion_textbox, llm_client, overlay_manager):
     transcriber.clear_transcript_data()
 
     with speaker_queue.mutex:
@@ -59,11 +66,12 @@ def clear_context(transcriber, speaker_queue, mic_queue, suggestion_textbox, llm
 
     suggestion_textbox.delete("0.0", "end")
     llm_client.reset_conversation()
+    overlay_manager.update_suggestions("Waiting for interviewer's question...\n\n", clear=True)
 
     if hasattr(update_transcript_UI, 'last_processed'):
         delattr(update_transcript_UI, 'last_processed')
 
-def create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client):
+def create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client, overlay_manager):
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
     root.title("AI Interview Copilot")
@@ -98,7 +106,7 @@ def create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client
     clear_button = ctk.CTkButton(
         left_frame,
         text="Clear All",
-        command=lambda: clear_context(transcriber, speaker_queue, mic_queue, suggestion_textbox, llm_client),
+        command=lambda: clear_context(transcriber, speaker_queue, mic_queue, suggestion_textbox, llm_client, overlay_manager),
         height=40
     )
     clear_button.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
@@ -108,6 +116,7 @@ def create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client
     right_frame.grid_columnconfigure(0, weight=1)
     right_frame.grid_rowconfigure(0, weight=0)
     right_frame.grid_rowconfigure(1, weight=1)
+    right_frame.grid_rowconfigure(2, weight=0)
 
     suggestion_label = ctk.CTkLabel(
         right_frame,
@@ -124,6 +133,16 @@ def create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client
     )
     suggestion_textbox.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
     suggestion_textbox.insert("0.0", "Waiting for interviewer's question...")
+
+    toggle_overlay_button = ctk.CTkButton(
+        right_frame,
+        text="Toggle Stealth Overlay",
+        command=overlay_manager.toggle_visibility,
+        height=40,
+        fg_color="#9b59b6",
+        hover_color="#8e44ad"
+    )
+    toggle_overlay_button.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
 
     return transcript_textbox, suggestion_textbox
 
@@ -167,6 +186,12 @@ def main():
         llm_client = None
 
     root = ctk.CTk()
+
+    # Create stealth overlay manager
+    overlay_manager = StealthOverlayManager()
+    overlay_manager.create_overlay()
+    print("[INFO] Stealth overlay created")
+
     speaker_queue = queue.Queue()
     mic_queue = queue.Queue()
 
@@ -185,12 +210,12 @@ def main():
     transcribe.daemon = True
     transcribe.start()
 
-    transcript_textbox, suggestion_textbox = create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client)
+    transcript_textbox, suggestion_textbox = create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client, overlay_manager)
 
     print("READY")
 
     if llm_client:
-        update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client)
+        update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager)
     else:
         def update_transcript_no_llm():
             transcript_string = transcriber.get_transcript()
