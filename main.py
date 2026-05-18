@@ -2,10 +2,7 @@ import threading
 from AudioTranscriber import AudioTranscriber
 import customtkinter as ctk
 import AudioRecorder
-import queue
 import time
-import sys
-import TranscriberModels
 import subprocess
 import os
 from dotenv import load_dotenv
@@ -56,13 +53,8 @@ def get_ai_suggestion(interviewer_question, suggestion_textbox, llm_client, over
         suggestion_textbox.insert("0.0", "❌ AI suggestion failed")
         overlay_manager.update_suggestions("❌ AI suggestion failed", clear=True)
 
-def clear_context(transcriber, speaker_queue, mic_queue, suggestion_textbox, llm_client, overlay_manager):
+def clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager):
     transcriber.clear_transcript_data()
-
-    with speaker_queue.mutex:
-        speaker_queue.queue.clear()
-    with mic_queue.mutex:
-        mic_queue.queue.clear()
 
     suggestion_textbox.delete("0.0", "end")
     llm_client.reset_conversation()
@@ -71,7 +63,7 @@ def clear_context(transcriber, speaker_queue, mic_queue, suggestion_textbox, llm
     if hasattr(update_transcript_UI, 'last_processed'):
         delattr(update_transcript_UI, 'last_processed')
 
-def create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client, overlay_manager):
+def create_ui_components(root, transcriber, llm_client, overlay_manager):
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
     root.title("AI Interview Copilot")
@@ -106,7 +98,7 @@ def create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client
     clear_button = ctk.CTkButton(
         left_frame,
         text="Clear All",
-        command=lambda: clear_context(transcriber, speaker_queue, mic_queue, suggestion_textbox, llm_client, overlay_manager),
+        command=lambda: clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager),
         height=40
     )
     clear_button.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
@@ -205,25 +197,15 @@ def main():
     overlay_manager.create_overlay()
     print("[INFO] Stealth overlay created")
 
-    speaker_queue = queue.Queue()
-    mic_queue = queue.Queue()
+    # Create audio recorders
+    mic_recorder = AudioRecorder.DefaultMicRecorder(device_index=mic_device_index)
+    speaker_recorder = AudioRecorder.DefaultSpeakerRecorder(device_index=speaker_device_index)
 
-    user_audio_recorder = AudioRecorder.DefaultMicRecorder(device_index=mic_device_index)
-    user_audio_recorder.record_into_queue(mic_queue)
+    # Create transcriber with new pure Groq API pipeline
+    transcriber = AudioTranscriber(mic_recorder, speaker_recorder)
+    transcriber.start()
 
-    time.sleep(2)
-
-    speaker_audio_recorder = AudioRecorder.DefaultSpeakerRecorder(device_index=speaker_device_index)
-    speaker_audio_recorder.record_into_queue(speaker_queue)
-
-    model = TranscriberModels.get_model()
-
-    transcriber = AudioTranscriber(user_audio_recorder.source, speaker_audio_recorder.source, model)
-    transcribe = threading.Thread(target=transcriber.transcribe_audio_queue, args=(speaker_queue, mic_queue))
-    transcribe.daemon = True
-    transcribe.start()
-
-    transcript_textbox, suggestion_textbox = create_ui_components(root, transcriber, speaker_queue, mic_queue, llm_client, overlay_manager)
+    transcript_textbox, suggestion_textbox = create_ui_components(root, transcriber, llm_client, overlay_manager)
 
     print("READY")
 
@@ -239,6 +221,7 @@ def main():
     root.mainloop()
 
     # Final cleanup after mainloop exits
+    transcriber.close()
     cleanup_on_exit()
 
 if __name__ == "__main__":

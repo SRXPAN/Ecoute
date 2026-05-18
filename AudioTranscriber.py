@@ -1,163 +1,210 @@
-import wave
-import os
 import threading
-import tempfile
-import custom_speech_recognition as sr
-import io
-from datetime import timedelta
-import pyaudiowpatch as pyaudio
-from heapq import merge
+import time
+import os
+from datetime import datetime, timedelta
+from groq import Groq
+from collections import deque
 
-PHRASE_TIMEOUT = 3.05
-MAX_PHRASES = 10
+PHRASE_TIMEOUT = 3.0  # Seconds of silence before processing audio
+MAX_PHRASES = 10  # Maximum number of phrases to keep in transcript
+AUDIO_BUFFER_DURATION = 3.0  # Seconds of audio to accumulate before transcription
 
 class AudioTranscriber:
-    def __init__(self, mic_source, speaker_source, model):
-        self.transcript_data = {"You": [], "Speaker": []}
-        self.transcript_changed_event = threading.Event()
-        self.audio_model = model
-        self.audio_sources = {
+    """
+    Pure Groq API-based audio transcriber.
+    No local models, no legacy speech recognition - direct API calls only.
+    """
+
+    def __init__(self, mic_recorder, speaker_recorder):
+        self.mic_recorder = mic_recorder
+        self.speaker_recorder = speaker_recorder
+
+        # Initialize Groq client
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not found in environment variables")
+
+        self.groq_client = Groq(api_key=api_key)
+
+        # Transcript storage
+        self.transcript_data = {
+            "You": deque(maxlen=MAX_PHRASES),
+            "Speaker": deque(maxlen=MAX_PHRASES)
+        }
+
+        # Audio buffers
+        self.audio_buffers = {
             "You": {
-                "sample_rate": mic_source.SAMPLE_RATE,
-                "sample_width": mic_source.SAMPLE_WIDTH,
-                "channels": mic_source.channels,
-                "last_sample": bytes(),
-                "last_spoken": None,
-                "new_phrase": True,
-                "process_data_func": self.process_mic_data
+                "data": b"",
+                "last_audio_time": None,
+                "is_processing": False
             },
             "Speaker": {
-                "sample_rate": speaker_source.SAMPLE_RATE,
-                "sample_width": speaker_source.SAMPLE_WIDTH,
-                "channels": speaker_source.channels,
-                "last_sample": bytes(),
-                "last_spoken": None,
-                "new_phrase": True,
-                "process_data_func": self.process_speaker_data
+                "data": b"",
+                "last_audio_time": None,
+                "is_processing": False
             }
         }
 
-    def transcribe_audio_queue(self, speaker_queue, mic_queue):
-        import queue
-        
-        while True:
-            pending_transcriptions = []
-            
-            mic_data = []
-            while True:
-                try:
-                    data, time_spoken = mic_queue.get_nowait()
-                    self.update_last_sample_and_phrase_status("You", data, time_spoken)
-                    mic_data.append((data, time_spoken))
-                except queue.Empty:
-                    break
-                    
-            speaker_data = []
-            while True:
-                try:
-                    data, time_spoken = speaker_queue.get_nowait()
-                    self.update_last_sample_and_phrase_status("Speaker", data, time_spoken)
-                    speaker_data.append((data, time_spoken))
-                except queue.Empty:
-                    break
-            
-            if mic_data:
-                source_info = self.audio_sources["You"]
-                try:
-                    fd, path = tempfile.mkstemp(suffix=".wav")
-                    os.close(fd)
-                    source_info["process_data_func"](source_info["last_sample"], path)
-                    text = self.audio_model.get_transcription(path)
-                    if text != '' and text.lower() != 'you':
-                        latest_time = max(time for _, time in mic_data)
-                        pending_transcriptions.append(("You", text, latest_time))
-                except Exception as e:
-                    print(f"Transcription error for You: {e}")
-                finally:
-                    os.unlink(path)
-            
-            if speaker_data:
-                source_info = self.audio_sources["Speaker"]
-                try:
-                    fd, path = tempfile.mkstemp(suffix=".wav")
-                    os.close(fd)
-                    source_info["process_data_func"](source_info["last_sample"], path)
-                    text = self.audio_model.get_transcription(path)
-                    if text != '' and text.lower() != 'you':
-                        latest_time = max(time for _, time in speaker_data)
-                        pending_transcriptions.append(("Speaker", text, latest_time))
-                except Exception as e:
-                    print(f"Transcription error for Speaker: {e}")
-                finally:
-                    os.unlink(path)
-            
-            if pending_transcriptions:
-                pending_transcriptions.sort(key=lambda x: x[2])
-                for who_spoke, text, time_spoken in pending_transcriptions:
-                    self.update_transcript(who_spoke, text, time_spoken)
-                
-                self.transcript_changed_event.set()
-            
-            threading.Event().wait(0.1)
+        self.is_running = False
+        print("[INFO] Groq-based audio transcriber initialized")
 
-    def update_last_sample_and_phrase_status(self, who_spoke, data, time_spoken):
-        source_info = self.audio_sources[who_spoke]
-        if source_info["last_spoken"] and time_spoken - source_info["last_spoken"] > timedelta(seconds=PHRASE_TIMEOUT):
-            source_info["last_sample"] = bytes()
-            source_info["new_phrase"] = True
-        else:
-            source_info["new_phrase"] = False
+    def start(self):
+        """Start transcription threads"""
+        if self.is_running:
+            return
 
-        source_info["last_sample"] += data
-        source_info["last_spoken"] = time_spoken 
+        self.is_running = True
 
-    def process_mic_data(self, data, temp_file_name):
-        audio_data = sr.AudioData(data, self.audio_sources["You"]["sample_rate"], self.audio_sources["You"]["sample_width"])
-        wav_data = io.BytesIO(audio_data.get_wav_data())
-        with open(temp_file_name, 'w+b') as f:
-            f.write(wav_data.read())
+        # Start audio recorders
+        self.mic_recorder.start_recording()
+        self.speaker_recorder.start_recording()
 
-    def process_speaker_data(self, data, temp_file_name):
-        with wave.open(temp_file_name, 'wb') as wf:
-            wf.setnchannels(self.audio_sources["Speaker"]["channels"])
-            p = pyaudio.PyAudio()
-            wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
-            wf.setframerate(self.audio_sources["Speaker"]["sample_rate"])
-            wf.writeframes(data)
+        # Start transcription threads
+        self.mic_thread = threading.Thread(target=self._transcribe_loop, args=("You",), daemon=True)
+        self.speaker_thread = threading.Thread(target=self._transcribe_loop, args=("Speaker",), daemon=True)
 
-    def update_transcript(self, who_spoke, text, time_spoken):
-        source_info = self.audio_sources[who_spoke]
-        transcript = self.transcript_data[who_spoke]
+        self.mic_thread.start()
+        self.speaker_thread.start()
 
-        if source_info["new_phrase"] or len(transcript) == 0:
-            if len(transcript) > MAX_PHRASES:
-                transcript.pop(-1)
-            transcript.insert(0, (f"{who_spoke}: [{text}]\n\n", time_spoken))
-        else:
-            transcript[0] = (f"{who_spoke}: [{text}]\n\n", time_spoken)
+        print("[INFO] Transcription started")
+
+    def _transcribe_loop(self, source_name):
+        """Main transcription loop for a specific audio source"""
+        recorder = self.mic_recorder if source_name == "You" else self.speaker_recorder
+        buffer_info = self.audio_buffers[source_name]
+
+        while self.is_running:
+            try:
+                # Get audio chunk from recorder
+                audio_chunk = recorder.get_audio_chunk(timeout=0.1)
+
+                if audio_chunk:
+                    audio_data, timestamp = audio_chunk
+
+                    # Accumulate audio data
+                    buffer_info["data"] += audio_data
+                    buffer_info["last_audio_time"] = timestamp
+
+                # Check if we should process accumulated audio
+                if buffer_info["data"] and buffer_info["last_audio_time"]:
+                    time_since_last_audio = (datetime.utcnow() - buffer_info["last_audio_time"]).total_seconds()
+
+                    # Process if we have enough silence or enough audio
+                    if time_since_last_audio >= PHRASE_TIMEOUT and not buffer_info["is_processing"]:
+                        # Process the accumulated audio
+                        self._process_audio_buffer(source_name)
+
+                time.sleep(0.05)  # Small delay to prevent CPU spinning
+
+            except Exception as e:
+                print(f"[ERROR] Transcription loop error for {source_name}: {e}")
+                time.sleep(0.5)
+
+    def _process_audio_buffer(self, source_name):
+        """Process accumulated audio buffer and send to Groq API"""
+        buffer_info = self.audio_buffers[source_name]
+
+        if not buffer_info["data"]:
+            return
+
+        # Mark as processing
+        buffer_info["is_processing"] = True
+
+        # Get audio data and clear buffer
+        audio_data = buffer_info["data"]
+        timestamp = buffer_info["last_audio_time"]
+        buffer_info["data"] = b""
+
+        # Process in background thread to avoid blocking
+        threading.Thread(
+            target=self._transcribe_with_groq,
+            args=(source_name, audio_data, timestamp),
+            daemon=True
+        ).start()
+
+        # Mark as not processing
+        buffer_info["is_processing"] = False
+
+    def _transcribe_with_groq(self, source_name, audio_data, timestamp):
+        """Send audio to Groq API for transcription"""
+        try:
+            # Convert raw audio to WAV format
+            recorder = self.mic_recorder if source_name == "You" else self.speaker_recorder
+            wav_bytes = recorder.create_wav_bytes(audio_data)
+
+            # Send to Groq API
+            transcription = self.groq_client.audio.transcriptions.create(
+                file=("audio.wav", wav_bytes),
+                model="whisper-large-v3",
+                response_format="text",
+                language="en"  # Auto-detect or specify language
+            )
+
+            # Clean up transcription
+            text = transcription.strip()
+
+            # Filter out empty or very short transcriptions
+            if text and len(text) > 3 and text.lower() not in ["you", "thank you", "thanks"]:
+                # Add to transcript
+                self.transcript_data[source_name].appendleft((
+                    f"{source_name}: [{text}]\n\n",
+                    timestamp
+                ))
+
+                print(f"[TRANSCRIPTION] {source_name}: {text}")
+
+        except Exception as e:
+            print(f"[ERROR] Groq transcription failed for {source_name}: {e}")
 
     def get_transcript(self):
-        combined_transcript = list(merge(
-            self.transcript_data["You"], self.transcript_data["Speaker"],
-            key=lambda x: x[1], reverse=True))
-        combined_transcript = combined_transcript[:MAX_PHRASES]
-        return "".join([t[0] for t in combined_transcript])
+        """Get combined transcript sorted by timestamp"""
+        # Combine both transcripts
+        combined = []
+
+        for source_name in ["You", "Speaker"]:
+            for text, timestamp in self.transcript_data[source_name]:
+                combined.append((text, timestamp))
+
+        # Sort by timestamp (most recent first)
+        combined.sort(key=lambda x: x[1], reverse=True)
+
+        # Return as string
+        return "".join([text for text, _ in combined[:MAX_PHRASES]])
 
     def get_latest_speaker_text(self):
         """Get the most recent speaker (interviewer) text for AI processing"""
         if self.transcript_data["Speaker"]:
-            latest = self.transcript_data["Speaker"][0]
-            text = latest[0]
-            text = text.replace("Speaker: [", "").replace("]\n\n", "").strip()
+            latest_text, _ = self.transcript_data["Speaker"][0]
+            # Remove formatting
+            text = latest_text.replace("Speaker: [", "").replace("]\n\n", "").strip()
             return text
         return ""
-    
+
     def clear_transcript_data(self):
+        """Clear all transcript data"""
         self.transcript_data["You"].clear()
         self.transcript_data["Speaker"].clear()
 
-        self.audio_sources["You"]["last_sample"] = bytes()
-        self.audio_sources["Speaker"]["last_sample"] = bytes()
+        # Clear audio buffers
+        for source_name in ["You", "Speaker"]:
+            self.audio_buffers[source_name]["data"] = b""
+            self.audio_buffers[source_name]["last_audio_time"] = None
 
-        self.audio_sources["You"]["new_phrase"] = True
-        self.audio_sources["Speaker"]["new_phrase"] = True
+        print("[INFO] Transcript data cleared")
+
+    def stop(self):
+        """Stop transcription"""
+        self.is_running = False
+
+        # Stop recorders
+        self.mic_recorder.stop_recording()
+        self.speaker_recorder.stop_recording()
+
+        print("[INFO] Transcription stopped")
+
+    def close(self):
+        """Clean up resources"""
+        self.stop()
+        self.mic_recorder.close()
+        self.speaker_recorder.close()

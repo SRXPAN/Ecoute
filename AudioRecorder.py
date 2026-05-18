@@ -1,61 +1,152 @@
-import custom_speech_recognition as sr
 import pyaudiowpatch as pyaudio
+import wave
+import io
+import threading
 from datetime import datetime
+from queue import Queue
 
-RECORD_TIMEOUT = 3
-ENERGY_THRESHOLD = 1000
-DYNAMIC_ENERGY_THRESHOLD = False
+CHUNK_SIZE = 1024
+SAMPLE_RATE = 16000
+RECORD_SECONDS = 3
+CHANNELS = 1
+SAMPLE_WIDTH = 2  # 16-bit audio
 
-class BaseRecorder:
-    def __init__(self, source):
-        self.recorder = sr.Recognizer()
-        self.recorder.energy_threshold = ENERGY_THRESHOLD
-        self.recorder.dynamic_energy_threshold = DYNAMIC_ENERGY_THRESHOLD
+class AudioRecorder:
+    """
+    Pure PyAudio-based audio recorder for microphone and speaker capture.
+    No legacy speech recognition wrappers - direct audio buffer management.
+    """
 
-        if source is None:
-            raise ValueError("audio source can't be None")
+    def __init__(self, device_index=None, is_speaker=False):
+        self.device_index = device_index
+        self.is_speaker = is_speaker
+        self.audio_queue = Queue()
+        self.is_recording = False
+        self.stream = None
+        self.p = pyaudio.PyAudio()
 
-        self.source = source
+        # Get device info
+        if is_speaker:
+            self.device_info = self._get_speaker_device()
+        else:
+            self.device_info = self._get_mic_device()
 
-    def adjust_for_noise(self, device_name, msg):
-        print(f"[INFO] Adjusting for ambient noise from {device_name}. " + msg)
-        with self.source:
-            self.recorder.adjust_for_ambient_noise(self.source)
-        print(f"[INFO] Completed ambient noise adjustment for {device_name}.")
+        print(f"[INFO] Initialized {'Speaker' if is_speaker else 'Mic'} recorder: {self.device_info['name']}")
 
-    def record_into_queue(self, audio_queue):
-        def record_callback(_, audio:sr.AudioData) -> None:
-            data = audio.get_raw_data()
-            audio_queue.put((data, datetime.utcnow()))
+    def _get_mic_device(self):
+        """Get microphone device info"""
+        if self.device_index is not None:
+            return self.p.get_device_info_by_index(self.device_index)
+        else:
+            # Use default input device
+            wasapi_info = self.p.get_host_api_info_by_type(pyaudio.paWASAPI)
+            return self.p.get_device_info_by_index(wasapi_info["defaultInputDevice"])
 
-        self.recorder.listen_in_background(self.source, record_callback, phrase_time_limit=RECORD_TIMEOUT)
+    def _get_speaker_device(self):
+        """Get speaker loopback device info"""
+        if self.device_index is not None:
+            device = self.p.get_device_info_by_index(self.device_index)
+            # If it's already a loopback device, use it
+            if device.get("isLoopbackDevice", False):
+                return device
+            # Otherwise, find the corresponding loopback device
+            for loopback in self.p.get_loopback_device_info_generator():
+                if device["name"] in loopback["name"]:
+                    return loopback
+        else:
+            # Use default output device's loopback
+            wasapi_info = self.p.get_host_api_info_by_type(pyaudio.paWASAPI)
+            default_speakers = self.p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
 
-class DefaultMicRecorder(BaseRecorder):
+            for loopback in self.p.get_loopback_device_info_generator():
+                if default_speakers["name"] in loopback["name"]:
+                    return loopback
+
+        raise ValueError("Could not find loopback device for speaker capture")
+
+    def start_recording(self):
+        """Start recording audio in a background thread"""
+        if self.is_recording:
+            return
+
+        self.is_recording = True
+
+        # Open audio stream
+        self.stream = self.p.open(
+            format=pyaudio.paInt16,
+            channels=int(self.device_info["maxInputChannels"]) if self.is_speaker else CHANNELS,
+            rate=int(self.device_info["defaultSampleRate"]) if self.is_speaker else SAMPLE_RATE,
+            input=True,
+            input_device_index=self.device_info["index"],
+            frames_per_buffer=CHUNK_SIZE,
+            stream_callback=self._audio_callback
+        )
+
+        self.stream.start_stream()
+        print(f"[INFO] Started recording from {'speaker' if self.is_speaker else 'microphone'}")
+
+    def _audio_callback(self, in_data, frame_count, time_info, status):
+        """Callback function for audio stream"""
+        if self.is_recording:
+            timestamp = datetime.utcnow()
+            self.audio_queue.put((in_data, timestamp))
+        return (None, pyaudio.paContinue)
+
+    def get_audio_chunk(self, timeout=0.1):
+        """Get audio chunk from queue (non-blocking)"""
+        try:
+            return self.audio_queue.get(timeout=timeout)
+        except:
+            return None
+
+    def create_wav_bytes(self, audio_data):
+        """Convert raw audio data to WAV format bytes"""
+        wav_buffer = io.BytesIO()
+
+        with wave.open(wav_buffer, 'wb') as wf:
+            wf.setnchannels(int(self.device_info["maxInputChannels"]) if self.is_speaker else CHANNELS)
+            wf.setsampwidth(self.p.get_sample_size(pyaudio.paInt16))
+            wf.setframerate(int(self.device_info["defaultSampleRate"]) if self.is_speaker else SAMPLE_RATE)
+            wf.writeframes(audio_data)
+
+        wav_buffer.seek(0)
+        return wav_buffer.read()
+
+    def stop_recording(self):
+        """Stop recording audio"""
+        self.is_recording = False
+
+        if self.stream:
+            self.stream.stop_stream()
+            self.stream.close()
+            self.stream = None
+
+        print(f"[INFO] Stopped recording from {'speaker' if self.is_speaker else 'microphone'}")
+
+    def close(self):
+        """Clean up resources"""
+        self.stop_recording()
+        self.p.terminate()
+
+
+class MicRecorder(AudioRecorder):
+    """Microphone audio recorder"""
+
     def __init__(self, device_index=None):
-        super().__init__(source=sr.Microphone(device_index=device_index, sample_rate=16000))
-        self.adjust_for_noise("Default Mic", "Please make some noise from the Default Mic...")
+        super().__init__(device_index=device_index, is_speaker=False)
 
-class DefaultSpeakerRecorder(BaseRecorder):
+
+class SpeakerRecorder(AudioRecorder):
+    """Speaker loopback audio recorder"""
+
     def __init__(self, device_index=None):
-        with pyaudio.PyAudio() as p:
-            if device_index is not None:
-                default_speakers = p.get_device_info_by_index(device_index)
-            else:
-                wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
-                default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+        super().__init__(device_index=device_index, is_speaker=True)
 
-            if not default_speakers["isLoopbackDevice"]:
-                for loopback in p.get_loopback_device_info_generator():
-                    if default_speakers["name"] in loopback["name"]:
-                        default_speakers = loopback
-                        break
-                else:
-                    print("[ERROR] No loopback device found.")
 
-        source = sr.Microphone(speaker=True,
-                               device_index= default_speakers["index"],
-                               sample_rate=int(default_speakers["defaultSampleRate"]),
-                               chunk_size=pyaudio.get_sample_size(pyaudio.paInt16),
-                               channels=default_speakers["maxInputChannels"])
-        super().__init__(source=source)
-        self.adjust_for_noise("Default Speaker", "Please make or play some noise from the Default Speaker...")
+# For backward compatibility with main.py
+class DefaultMicRecorder(MicRecorder):
+    pass
+
+
+class DefaultSpeakerRecorder(SpeakerRecorder):
+    pass
