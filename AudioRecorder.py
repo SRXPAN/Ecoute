@@ -31,16 +31,19 @@ class BaseRecorder:
         self.recorder.listen_in_background(self.source, record_callback, phrase_time_limit=RECORD_TIMEOUT)
 
 class DefaultMicRecorder(BaseRecorder):
-    def __init__(self):
-        super().__init__(source=sr.Microphone(sample_rate=16000))
+    def __init__(self, device_index=None):
+        super().__init__(source=sr.Microphone(device_index=device_index, sample_rate=16000))
         self.adjust_for_noise("Default Mic", "Please make some noise from the Default Mic...")
 
 class DefaultSpeakerRecorder(BaseRecorder):
-    def __init__(self):
+    def __init__(self, device_index=None):
         with pyaudio.PyAudio() as p:
-            wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
-            default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
-            
+            if device_index is not None:
+                default_speakers = p.get_device_info_by_index(device_index)
+            else:
+                wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
+                default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+
             if not default_speakers["isLoopbackDevice"]:
                 for loopback in p.get_loopback_device_info_generator():
                     if default_speakers["name"] in loopback["name"]:
@@ -48,7 +51,7 @@ class DefaultSpeakerRecorder(BaseRecorder):
                         break
                 else:
                     print("[ERROR] No loopback device found.")
-        
+
         source = sr.Microphone(speaker=True,
                                device_index= default_speakers["index"],
                                sample_rate=int(default_speakers["defaultSampleRate"]),

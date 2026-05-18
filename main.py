@@ -1,12 +1,14 @@
 import threading
 from AudioTranscriber import AudioTranscriber
 import customtkinter as ctk
-import AudioRecorder 
+import AudioRecorder
 import queue
 import time
 import sys
 import TranscriberModels
 import subprocess
+import os
+from dotenv import load_dotenv
 
 def write_in_textbox(textbox, text):
     textbox.delete("0.0", "end")
@@ -65,19 +67,43 @@ def main():
         print("ERROR: The ffmpeg library is not installed. Please install ffmpeg and try again.")
         return
 
+    load_dotenv()
+
+    mic_device_index = os.getenv("MIC_DEVICE_INDEX")
+    speaker_device_index = os.getenv("SPEAKER_DEVICE_INDEX")
+
+    if mic_device_index:
+        mic_device_index = int(mic_device_index)
+    else:
+        mic_device_index = None
+
+    if speaker_device_index:
+        speaker_device_index = int(speaker_device_index)
+    else:
+        speaker_device_index = None
+
+    context_file = "temp_context.txt"
+    if os.path.exists(context_file):
+        with open(context_file, "r", encoding="utf-8") as f:
+            interview_context = f.read()
+            print(f"[INFO] Loaded interview context ({len(interview_context)} characters)")
+    else:
+        interview_context = ""
+        print("[INFO] No interview context found")
+
     root = ctk.CTk()
     speaker_queue = queue.Queue()
     mic_queue = queue.Queue()
 
-    user_audio_recorder = AudioRecorder.DefaultMicRecorder()
+    user_audio_recorder = AudioRecorder.DefaultMicRecorder(device_index=mic_device_index)
     user_audio_recorder.record_into_queue(mic_queue)
 
     time.sleep(2)
 
-    speaker_audio_recorder = AudioRecorder.DefaultSpeakerRecorder()
+    speaker_audio_recorder = AudioRecorder.DefaultSpeakerRecorder(device_index=speaker_device_index)
     speaker_audio_recorder.record_into_queue(speaker_queue)
 
-    model = TranscriberModels.get_model('--api' in sys.argv)
+    model = TranscriberModels.get_model()
 
     transcriber = AudioTranscriber(user_audio_recorder.source, speaker_audio_recorder.source, model)
     transcribe = threading.Thread(target=transcriber.transcribe_audio_queue, args=(speaker_queue, mic_queue))
