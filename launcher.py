@@ -4,8 +4,6 @@ import pyaudiowpatch as pyaudio
 from tkinter import messagebox
 import os
 from dotenv import load_dotenv, set_key
-import subprocess
-import sys
 
 class LauncherApp:
     def __init__(self):
@@ -259,19 +257,19 @@ class LauncherApp:
         with open("temp_context.txt", "w", encoding="utf-8") as f:
             f.write(context_text)
 
+        # Hide launcher window
         self.root.withdraw()
 
         try:
-            subprocess.run([sys.executable, "main.py"], check=True)
-        except subprocess.CalledProcessError as e:
+            # Import and run main application directly (PyInstaller compatible)
+            import main
+            main.main()
+        except Exception as e:
             messagebox.showerror("Error", f"Failed to start main application: {str(e)}")
             self.root.deiconify()
             return
-        except Exception as e:
-            messagebox.showerror("Error", f"Unexpected error: {str(e)}")
-            self.root.deiconify()
-            return
 
+        # Exit application after main window closes
         self.root.quit()
 
     def run(self):
