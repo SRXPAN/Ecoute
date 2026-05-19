@@ -36,8 +36,8 @@ class StealthOverlay:
         # Always on top
         self.root.attributes('-topmost', True)
 
-        # Semi-transparent background (70% opacity = 0.7 alpha)
-        self.root.attributes("-transparentcolor", "#18181B") # Робить цей колір повністю прозорим
+        # Semi-transparent background (85% opacity) to keep it clickable but discrete
+        self.root.attributes('-alpha', 0.85)
 
         # Dark background color
         self.root.configure(fg_color="#18181B") # Дуже темний фон (Zinc-900)
@@ -227,8 +227,8 @@ class StealthOverlay:
         self.root.withdraw()
 
     def close_overlay(self):
-        """Close the overlay window"""
-        self.root.destroy()
+        """Close the overlay window without destroying it"""
+        self.hide()
 
     def is_visible(self):
         """Check if overlay is currently visible"""

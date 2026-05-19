@@ -49,15 +49,20 @@ def get_ai_suggestion(interviewer_question, suggestion_textbox, llm_client, over
         full_response = ""
         response_generator = llm_client.get_suggestion(interviewer_question)
 
-        # Stream to both the main UI and the stealth overlay using the same generator
+        # 1. Очищаємо оверлей перед початком нової відповіді
+        overlay_manager.update_suggestions("", clear=True)
+
+        # 2. Стрімимо токени одночасно і в головне вікно, і в оверлей
         for token in response_generator:
             full_response += token
+
+            # Оновлюємо дашборд
             suggestion_textbox.delete("0.0", "end")
             suggestion_textbox.insert("0.0", full_response)
             suggestion_textbox.update()
 
-        # Update overlay with the complete response
-        overlay_manager.update_suggestions(full_response, clear=True)
+            # Миттєво відправляємо шматок тексту в оверлей
+            overlay_manager.update_suggestions(token, clear=False)
 
     except Exception as e:
         print(f"[ERROR] Failed to get AI suggestion: {e}")
