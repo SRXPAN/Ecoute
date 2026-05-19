@@ -37,10 +37,10 @@ class StealthOverlay:
         self.root.attributes('-topmost', True)
 
         # Semi-transparent background (70% opacity = 0.7 alpha)
-        self.root.attributes('-alpha', 0.85)
+        self.root.attributes("-transparentcolor", "#18181B") # Робить цей колір повністю прозорим
 
         # Dark background color
-        self.root.configure(fg_color="#1a1a1a")
+        self.root.configure(fg_color="#18181B") # Дуже темний фон (Zinc-900)
 
         # Dragging variables
         self.drag_start_x = 0

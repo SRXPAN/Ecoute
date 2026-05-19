@@ -37,11 +37,13 @@ class AudioTranscriber:
             "You": {
                 "data": b"",
                 "last_audio_time": None,
+                "buffer_start_time": None,
                 "is_processing": False
             },
             "Speaker": {
                 "data": b"",
                 "last_audio_time": None,
+                "buffer_start_time": None,
                 "is_processing": False
             }
         }
@@ -73,30 +75,29 @@ class AudioTranscriber:
         """Main transcription loop for a specific audio source"""
         recorder = self.mic_recorder if source_name == "You" else self.speaker_recorder
         buffer_info = self.audio_buffers[source_name]
-
+        MAX_PHRASE_DURATION = 8.0  # Примусова відправка кожні 8 секунд розмови
         while self.is_running:
             try:
-                # Get audio chunk from recorder
                 audio_chunk = recorder.get_audio_chunk(timeout=0.1)
 
                 if audio_chunk:
                     audio_data, timestamp = audio_chunk
+                    
+                    if not buffer_info["data"]:
+                        buffer_info["buffer_start_time"] = timestamp # Фіксуємо початок розмови
 
-                    # Accumulate audio data
                     buffer_info["data"] += audio_data
                     buffer_info["last_audio_time"] = timestamp
 
-                # Check if we should process accumulated audio
                 if buffer_info["data"] and buffer_info["last_audio_time"]:
                     time_since_last_audio = (datetime.utcnow() - buffer_info["last_audio_time"]).total_seconds()
+                    duration = (datetime.utcnow() - buffer_info["buffer_start_time"]).total_seconds()
 
-                    # Process if we have enough silence or enough audio
-                    if time_since_last_audio >= PHRASE_TIMEOUT and not buffer_info["is_processing"]:
-                        # Process the accumulated audio
+                    # Відправляємо якщо тиша 1 сек АБО людина говорить без упину вже 8 секунд
+                    if (time_since_last_audio >= PHRASE_TIMEOUT or duration >= MAX_PHRASE_DURATION) and not buffer_info["is_processing"]:
                         self._process_audio_buffer(source_name)
 
-                time.sleep(0.05)  # Small delay to prevent CPU spinning
-
+                time.sleep(0.05)
             except Exception as e:
                 print(f"[ERROR] Transcription loop error for {source_name}: {e}")
                 time.sleep(0.5)
