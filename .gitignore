@@ -33,7 +33,6 @@ env/
 # Environment Variables
 .env
 .env.local
-keys.py
 
 # Temporary Files
 temp_context.txt

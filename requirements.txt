@@ -5,4 +5,5 @@ python-dotenv
 sounddevice
 groq
 google-generativeai
+ollama
 pyinstaller

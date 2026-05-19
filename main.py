@@ -164,7 +164,7 @@ def main():
         print("[INFO] No interview context found")
 
     try:
-        llm_client = LLMClient(provider="gemini")
+        llm_client = LLMClient(provider="ollama")
         print("[INFO] LLM client initialized successfully")
     except Exception as e:
         print(f"[ERROR] Failed to initialize LLM client: {e}")
