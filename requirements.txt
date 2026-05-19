@@ -4,6 +4,5 @@ PyAudioWPatch
 python-dotenv
 sounddevice
 groq
-google-generativeai
-ollama
+openai
 pyinstaller

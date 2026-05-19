@@ -9,24 +9,35 @@ from dotenv import load_dotenv
 from LLMClient import LLMClient
 from StealthOverlay import StealthOverlayManager
 
+# Глобальний прапорець для відстеження статусу генерації
+is_generating = False
+
 def write_in_textbox(textbox, text):
     textbox.delete("0.0", "end")
     textbox.insert("0.0", text)
 
 def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager):
+    global is_generating
     transcript_string = transcriber.get_transcript()
     write_in_textbox(transcript_textbox, transcript_string)
 
     latest_speaker_text = transcriber.get_latest_speaker_text()
     if latest_speaker_text and len(latest_speaker_text.strip()) > 20:
         if not hasattr(update_transcript_UI, 'last_processed') or update_transcript_UI.last_processed != latest_speaker_text:
-            update_transcript_UI.last_processed = latest_speaker_text
 
-            threading.Thread(
-                target=get_ai_suggestion,
-                args=(latest_speaker_text, suggestion_textbox, llm_client, overlay_manager),
-                daemon=True
-            ).start()
+            # Перевіряємо, чи не йде зараз генерація
+            if not is_generating:
+                update_transcript_UI.last_processed = latest_speaker_text
+                is_generating = True  # Блокуємо нові запити
+
+                def thread_target():
+                    global is_generating
+                    try:
+                        get_ai_suggestion(latest_speaker_text, suggestion_textbox, llm_client, overlay_manager)
+                    finally:
+                        is_generating = False  # Розблоковуємо після завершення
+
+                threading.Thread(target=thread_target, daemon=True).start()
 
     transcript_textbox.after(300, update_transcript_UI, transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager)
 
@@ -38,14 +49,15 @@ def get_ai_suggestion(interviewer_question, suggestion_textbox, llm_client, over
         full_response = ""
         response_generator = llm_client.get_suggestion(interviewer_question)
 
-        # Stream to both the main UI and the stealth overlay
-        overlay_manager.stream_suggestions(llm_client.get_suggestion(interviewer_question))
-
+        # Stream to both the main UI and the stealth overlay using the same generator
         for token in response_generator:
             full_response += token
             suggestion_textbox.delete("0.0", "end")
             suggestion_textbox.insert("0.0", full_response)
             suggestion_textbox.update()
+
+        # Update overlay with the complete response
+        overlay_manager.update_suggestions(full_response, clear=True)
 
     except Exception as e:
         print(f"[ERROR] Failed to get AI suggestion: {e}")
@@ -164,7 +176,7 @@ def main():
         print("[INFO] No interview context found")
 
     try:
-        llm_client = LLMClient(provider="ollama")
+        llm_client = LLMClient(provider="zhipu")
         print("[INFO] LLM client initialized successfully")
     except Exception as e:
         print(f"[ERROR] Failed to initialize LLM client: {e}")

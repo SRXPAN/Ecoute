@@ -147,19 +147,19 @@ class LauncherApp:
             self.groq_api_key_entry.insert(0, existing_groq_key)
         self.groq_api_key_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
 
-        ollama_label = ctk.CTkLabel(llm_section, text="Ollama API Key (AI Assistant):", font=("Arial", 14))
-        ollama_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        zhipu_label = ctk.CTkLabel(llm_section, text="Zhipu API Key (AI Assistant):", font=("Arial", 14))
+        zhipu_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
-        self.ollama_api_key_entry = ctk.CTkEntry(
+        self.zhipu_api_key_entry = ctk.CTkEntry(
             llm_section,
             width=400,
             show="*",
-            placeholder_text="Enter your Ollama API key"
+            placeholder_text="Enter your Zhipu API key"
         )
-        existing_ollama_key = os.getenv("OLLAMA_API_KEY", "")
-        if existing_ollama_key:
-            self.ollama_api_key_entry.insert(0, existing_ollama_key)
-        self.ollama_api_key_entry.grid(row=2, column=1, padx=10, pady=(5, 10), sticky="ew")
+        existing_zhipu_key = os.getenv("ZHIPU_API_KEY", "")
+        if existing_zhipu_key:
+            self.zhipu_api_key_entry.insert(0, existing_zhipu_key)
+        self.zhipu_api_key_entry.grid(row=2, column=1, padx=10, pady=(5, 10), sticky="ew")
 
         context_section = ctk.CTkFrame(main_frame)
         context_section.grid(row=3, column=0, sticky="ew", pady=(0, 20))
@@ -202,14 +202,14 @@ class LauncherApp:
 
     def start_application(self):
         groq_api_key = self.groq_api_key_entry.get().strip()
-        ollama_api_key = self.ollama_api_key_entry.get().strip()
+        zhipu_api_key = self.zhipu_api_key_entry.get().strip()
 
         if not groq_api_key:
             messagebox.showerror("Error", "Please enter your Groq API key for transcription")
             return
 
-        if not ollama_api_key:
-            messagebox.showerror("Error", "Please enter your Ollama API key for AI assistance")
+        if not zhipu_api_key:
+            messagebox.showerror("Error", "Please enter your Zhipu API key for AI assistance")
             return
 
         context_text = self.context_textbox.get("0.0", "end-1c").strip()
@@ -250,7 +250,7 @@ class LauncherApp:
                 f.write("")
 
         set_key(env_file, "GROQ_API_KEY", groq_api_key)
-        set_key(env_file, "OLLAMA_API_KEY", ollama_api_key)
+        set_key(env_file, "ZHIPU_API_KEY", zhipu_api_key)
         set_key(env_file, "MIC_DEVICE_INDEX", str(mic_index))
         set_key(env_file, "SPEAKER_DEVICE_INDEX", str(speaker_index))
 
