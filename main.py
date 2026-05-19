@@ -76,77 +76,61 @@ def clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager):
         delattr(update_transcript_UI, 'last_processed')
 
 def create_ui_components(root, transcriber, llm_client, overlay_manager):
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("dark-blue")
-    root.title("AI Interview Copilot")
-    root.geometry("1400x700")
+    root.title("AI Interview Copilot - Dashboard")
+    root.geometry("1400x800")
+    root.configure(fg_color="#0F172A") # Темно-синій відтінок (Tailwind Slate-900)
 
-    root.grid_columnconfigure(0, weight=2)
-    root.grid_columnconfigure(1, weight=1)
+    root.grid_columnconfigure(0, weight=3) # Трохи більше місця транскрипту
+    root.grid_columnconfigure(1, weight=2)
     root.grid_rowconfigure(0, weight=1)
 
-    left_frame = ctk.CTkFrame(root)
+    modern_font = ("Segoe UI", 15)
+    title_font = ("Segoe UI", 18, "bold")
+
+    # Ліва панель (Транскрипт)
+    left_frame = ctk.CTkFrame(root, fg_color="#1E293B", corner_radius=12) # Slate-800
     left_frame.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=20)
     left_frame.grid_columnconfigure(0, weight=1)
-    left_frame.grid_rowconfigure(0, weight=0)
     left_frame.grid_rowconfigure(1, weight=1)
-    left_frame.grid_rowconfigure(2, weight=0)
 
-    transcript_label = ctk.CTkLabel(
-        left_frame,
-        text="📝 Live Transcript",
-        font=("Arial", 18, "bold")
-    )
-    transcript_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+    transcript_label = ctk.CTkLabel(left_frame, text="📝 Live Transcript", font=title_font, text_color="#F8FAFC")
+    transcript_label.grid(row=0, column=0, sticky="w", padx=20, pady=(15, 5))
 
     transcript_textbox = ctk.CTkTextbox(
-        left_frame,
-        font=("Arial", 16),
-        text_color='#FFFCF2',
-        wrap="word"
+        left_frame, font=modern_font, text_color="#CBD5E1", fg_color="#0F172A",
+        border_width=1, border_color="#334155", wrap="word", spacing1=5
     )
-    transcript_textbox.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+    transcript_textbox.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
 
     clear_button = ctk.CTkButton(
-        left_frame,
-        text="Clear All",
-        command=lambda: clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager),
-        height=40
+        left_frame, text="Clear Session", font=("Segoe UI", 14), height=40, corner_radius=8,
+        fg_color="#334155", hover_color="#475569", text_color="#F8FAFC",
+        command=lambda: clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager)
     )
-    clear_button.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+    clear_button.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
 
-    right_frame = ctk.CTkFrame(root)
+    # Права панель (AI Підказки)
+    right_frame = ctk.CTkFrame(root, fg_color="#1E293B", corner_radius=12)
     right_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=20)
     right_frame.grid_columnconfigure(0, weight=1)
-    right_frame.grid_rowconfigure(0, weight=0)
     right_frame.grid_rowconfigure(1, weight=1)
-    right_frame.grid_rowconfigure(2, weight=0)
 
-    suggestion_label = ctk.CTkLabel(
-        right_frame,
-        text="💡 AI Suggestions",
-        font=("Arial", 18, "bold")
-    )
-    suggestion_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+    suggestion_label = ctk.CTkLabel(right_frame, text="💡 AI Copilot", font=title_font, text_color="#38BDF8") # Блакитний акцент
+    suggestion_label.grid(row=0, column=0, sticky="w", padx=20, pady=(15, 5))
 
     suggestion_textbox = ctk.CTkTextbox(
-        right_frame,
-        font=("Arial", 18),
-        text_color='#2ecc71',
-        wrap="word"
+        right_frame, font=("Segoe UI", 16), text_color="#38BDF8", fg_color="#0F172A",
+        border_width=1, border_color="#334155", wrap="word", spacing1=8
     )
-    suggestion_textbox.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
-    suggestion_textbox.insert("0.0", "Waiting for interviewer's question...")
+    suggestion_textbox.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
+    suggestion_textbox.insert("0.0", "Waiting for the first question...")
 
     toggle_overlay_button = ctk.CTkButton(
-        right_frame,
-        text="Toggle Stealth Overlay",
-        command=overlay_manager.toggle_visibility,
-        height=40,
-        fg_color="#9b59b6",
-        hover_color="#8e44ad"
+        right_frame, text="Toggle Stealth Overlay", font=("Segoe UI", 14, "bold"), height=40, corner_radius=8,
+        fg_color="#0EA5E9", hover_color="#0284C7", text_color="#FFFFFF",
+        command=overlay_manager.toggle_visibility
     )
-    toggle_overlay_button.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+    toggle_overlay_button.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
 
     return transcript_textbox, suggestion_textbox
 

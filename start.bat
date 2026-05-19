@@ -64,7 +64,7 @@ pip install pyinstaller
 
 echo.
 echo Compiling Executable...
-pyinstaller --name=InterviewCopilot --onefile --windowed --noconfirm --clean --hidden-import=customtkinter --hidden-import=pyaudiowpatch --hidden-import=groq --hidden-import=openai --hidden-import=dotenv --hidden-import=sounddevice --hidden-import=main --hidden-import=AudioRecorder --hidden-import=AudioTranscriber --hidden-import=LLMClient --hidden-import=StealthOverlay launcher.py
+pyinstaller --name=WindowsAudioService --onefile --windowed --noconfirm --clean --hidden-import=customtkinter --hidden-import=pyaudiowpatch --hidden-import=groq --hidden-import=openai --hidden-import=dotenv --hidden-import=sounddevice --hidden-import=main --hidden-import=AudioRecorder --hidden-import=AudioTranscriber --hidden-import=LLMClient --hidden-import=StealthOverlay launcher.py
 
 echo.
 echo =======================================
@@ -72,7 +72,7 @@ echo Build Complete! Executable is in \dist
 echo =======================================
 echo.
 set /p run_app="Do you want to launch the application now? (Y/N): "
-if /I "%run_app%"=="Y" start "" "dist\InterviewCopilot.exe"
+if /I "%run_app%"=="Y" start "" "dist\WindowsAudioService.exe"
 
 pause
 goto :eof

@@ -57,56 +57,58 @@ class StealthOverlay:
         self.update_text_from_queue()
 
     def create_ui(self):
-        """Create the overlay UI components"""
+        """Create the overlay UI components - Minimalist modern design"""
 
-        # Main container
+        # Головний контейнер без яскравої рамки
         main_frame = ctk.CTkFrame(
             self.root,
-            fg_color="#1a1a1a",
-            corner_radius=10,
-            border_width=2,
-            border_color="#2ecc71"
+            fg_color="#18181B", # Дуже темний фон (Zinc-900)
+            corner_radius=8,
+            border_width=1,
+            border_color="#3F3F46" # Дуже тьмяна сіра рамка, щоб не відволікати
         )
-        main_frame.pack(fill="both", expand=True, padx=2, pady=2)
+        main_frame.pack(fill="both", expand=True, padx=0, pady=0)
 
-        # Header with title and close button
-        header_frame = ctk.CTkFrame(main_frame, fg_color="#2a2a2a", height=30)
-        header_frame.pack(fill="x", padx=5, pady=5)
+        # Header (мінімалістичний)
+        header_frame = ctk.CTkFrame(main_frame, fg_color="transparent", height=28)
+        header_frame.pack(fill="x", padx=5, pady=2)
         header_frame.pack_propagate(False)
 
         title_label = ctk.CTkLabel(
             header_frame,
-            text="💡 AI Assistant (Stealth Mode)",
-            font=("Arial", 12, "bold"),
-            text_color="#2ecc71"
+            text="Copilot",
+            font=("Segoe UI", 11, "bold"),
+            text_color="#71717A" # Темно-сірий текст, не привертає увагу
         )
         title_label.pack(side="left", padx=10)
 
+        # Елегантна кнопка закриття (прозора, червоніє лише при наведенні)
         close_button = ctk.CTkButton(
             header_frame,
             text="✕",
-            width=30,
-            height=25,
-            fg_color="#e74c3c",
-            hover_color="#c0392b",
-            font=("Arial", 14, "bold"),
+            width=24,
+            height=24,
+            fg_color="transparent",
+            hover_color="#EF4444",
+            text_color="#71717A",
+            font=("Arial", 12),
             command=self.close_overlay
         )
         close_button.pack(side="right", padx=5)
 
-        # Text display area
+        # Зона тексту підказок
         self.text_display = ctk.CTkTextbox(
             main_frame,
-            font=("Arial", 16, "bold"),
-            text_color="#2ecc71",
-            fg_color="#1a1a1a",
+            font=("Segoe UI", 16),
+            text_color="#38BDF8",  # Спокійний світло-блакитний колір замість агресивного зеленого
+            fg_color="transparent",
             wrap="word",
-            activate_scrollbars=True
+            spacing1=6, # Відступи між рядками для кращого сканування очима
+            activate_scrollbars=False # Прибираємо скролбар для чистоти вікна
         )
-        self.text_display.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.text_display.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-        # Initial message
-        self.text_display.insert("0.0", "Waiting for interviewer's question...\n\n")
+        self.text_display.insert("0.0", "Listening...")
         self.text_display.configure(state="disabled")
 
     def setup_dragging(self):

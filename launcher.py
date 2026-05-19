@@ -78,127 +78,88 @@ class LauncherApp:
             messagebox.showerror("Error", f"Failed to scan audio devices: {str(e)}")
 
     def create_ui(self):
-        main_frame = ctk.CTkScrollableFrame(self.root)
-        main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        # Налаштовуємо сучасний базовий шрифт для всього вікна
+        modern_font = ("Segoe UI", 14)
+        title_font = ("Segoe UI", 24, "bold")
+        header_font = ("Segoe UI", 16, "bold")
+
+        self.root.configure(fg_color="#111827") # Глибокий темний фон (Tailwind Gray-900)
+
+        main_frame = ctk.CTkScrollableFrame(self.root, fg_color="transparent")
+        main_frame.grid(row=0, column=0, sticky="nsew", padx=40, pady=40)
         main_frame.grid_columnconfigure(0, weight=1)
 
         title_label = ctk.CTkLabel(
             main_frame,
-            text="AI Interview Copilot Launcher",
-            font=("Arial", 24, "bold")
+            text="AI Interview Copilot",
+            font=title_font,
+            text_color="#F9FAFB"
         )
-        title_label.grid(row=0, column=0, pady=(0, 20), sticky="w")
+        title_label.grid(row=0, column=0, pady=(0, 30), sticky="w")
 
-        audio_section = ctk.CTkFrame(main_frame)
-        audio_section.grid(row=1, column=0, sticky="ew", pady=(0, 20))
+        # Картка 1: Аудіо
+        audio_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
+        audio_section.grid(row=1, column=0, sticky="ew", pady=(0, 20), ipady=10)
         audio_section.grid_columnconfigure(1, weight=1)
 
-        audio_title = ctk.CTkLabel(
-            audio_section,
-            text="Audio Devices",
-            font=("Arial", 18, "bold")
-        )
-        audio_title.grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=10, sticky="w")
+        audio_title = ctk.CTkLabel(audio_section, text="🎙️ Audio Setup", font=header_font, text_color="#E5E7EB")
+        audio_title.grid(row=0, column=0, columnspan=2, pady=(15, 15), padx=20, sticky="w")
 
-        mic_label = ctk.CTkLabel(audio_section, text="Microphone Input:", font=("Arial", 14))
-        mic_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        mic_label = ctk.CTkLabel(audio_section, text="Microphone:", font=modern_font, text_color="#9CA3AF")
+        mic_label.grid(row=1, column=0, padx=20, pady=10, sticky="w")
+        self.mic_dropdown = ctk.CTkComboBox(audio_section, values=["Scanning..."], width=400, font=modern_font, fg_color="#374151", border_width=0, button_color="#4B5563", state="readonly")
+        self.mic_dropdown.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
 
-        self.mic_dropdown = ctk.CTkComboBox(
-            audio_section,
-            values=["Scanning..."],
-            width=400,
-            state="readonly"
-        )
-        self.mic_dropdown.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        speaker_label = ctk.CTkLabel(audio_section, text="Speakers:", font=modern_font, text_color="#9CA3AF")
+        speaker_label.grid(row=2, column=0, padx=20, pady=10, sticky="w")
+        self.speaker_dropdown = ctk.CTkComboBox(audio_section, values=["Scanning..."], width=400, font=modern_font, fg_color="#374151", border_width=0, button_color="#4B5563", state="readonly")
+        self.speaker_dropdown.grid(row=2, column=1, padx=20, pady=(10, 15), sticky="ew")
 
-        speaker_label = ctk.CTkLabel(audio_section, text="Speaker Output:", font=("Arial", 14))
-        speaker_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
-
-        self.speaker_dropdown = ctk.CTkComboBox(
-            audio_section,
-            values=["Scanning..."],
-            width=400,
-            state="readonly"
-        )
-        self.speaker_dropdown.grid(row=2, column=1, padx=10, pady=(5, 10), sticky="ew")
-
-        llm_section = ctk.CTkFrame(main_frame)
-        llm_section.grid(row=2, column=0, sticky="ew", pady=(0, 20))
+        # Картка 2: API Ключі
+        llm_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
+        llm_section.grid(row=2, column=0, sticky="ew", pady=(0, 20), ipady=10)
         llm_section.grid_columnconfigure(1, weight=1)
 
-        llm_title = ctk.CTkLabel(
-            llm_section,
-            text="API Configuration",
-            font=("Arial", 18, "bold")
-        )
-        llm_title.grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=10, sticky="w")
+        llm_title = ctk.CTkLabel(llm_section, text="🔑 API Credentials", font=header_font, text_color="#E5E7EB")
+        llm_title.grid(row=0, column=0, columnspan=2, pady=(15, 15), padx=20, sticky="w")
 
-        groq_label = ctk.CTkLabel(llm_section, text="Groq API Key (Transcription):", font=("Arial", 14))
-        groq_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
-
-        self.groq_api_key_entry = ctk.CTkEntry(
-            llm_section,
-            width=400,
-            show="*",
-            placeholder_text="Enter your Groq API key"
-        )
+        groq_label = ctk.CTkLabel(llm_section, text="Groq API Key:", font=modern_font, text_color="#9CA3AF")
+        groq_label.grid(row=1, column=0, padx=20, pady=10, sticky="w")
+        self.groq_api_key_entry = ctk.CTkEntry(llm_section, width=400, show="•", font=modern_font, fg_color="#374151", border_width=0, placeholder_text="gsk_...")
         existing_groq_key = os.getenv("GROQ_API_KEY", "")
-        if existing_groq_key:
-            self.groq_api_key_entry.insert(0, existing_groq_key)
-        self.groq_api_key_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        if existing_groq_key: self.groq_api_key_entry.insert(0, existing_groq_key)
+        self.groq_api_key_entry.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
 
-        zhipu_label = ctk.CTkLabel(llm_section, text="Zhipu API Key (AI Assistant):", font=("Arial", 14))
-        zhipu_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
-
-        self.zhipu_api_key_entry = ctk.CTkEntry(
-            llm_section,
-            width=400,
-            show="*",
-            placeholder_text="Enter your Zhipu API key"
-        )
+        zhipu_label = ctk.CTkLabel(llm_section, text="Zhipu API Key:", font=modern_font, text_color="#9CA3AF")
+        zhipu_label.grid(row=2, column=0, padx=20, pady=10, sticky="w")
+        self.zhipu_api_key_entry = ctk.CTkEntry(llm_section, width=400, show="•", font=modern_font, fg_color="#374151", border_width=0, placeholder_text="...")
         existing_zhipu_key = os.getenv("ZHIPU_API_KEY", "")
-        if existing_zhipu_key:
-            self.zhipu_api_key_entry.insert(0, existing_zhipu_key)
-        self.zhipu_api_key_entry.grid(row=2, column=1, padx=10, pady=(5, 10), sticky="ew")
+        if existing_zhipu_key: self.zhipu_api_key_entry.insert(0, existing_zhipu_key)
+        self.zhipu_api_key_entry.grid(row=2, column=1, padx=20, pady=(10, 15), sticky="ew")
 
-        context_section = ctk.CTkFrame(main_frame)
-        context_section.grid(row=3, column=0, sticky="ew", pady=(0, 20))
+        # Картка 3: Контекст
+        context_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
+        context_section.grid(row=3, column=0, sticky="ew", pady=(0, 30))
         context_section.grid_columnconfigure(0, weight=1)
 
-        context_title = ctk.CTkLabel(
-            context_section,
-            text="Interview Context (Resume / Job Description)",
-            font=("Arial", 18, "bold")
-        )
-        context_title.grid(row=0, column=0, pady=(10, 10), padx=10, sticky="w")
+        context_title = ctk.CTkLabel(context_section, text="📄 Interview Context (Resume / Job Description)", font=header_font, text_color="#E5E7EB")
+        context_title.grid(row=0, column=0, pady=(15, 10), padx=20, sticky="w")
 
-        self.context_textbox = ctk.CTkTextbox(
-            context_section,
-            height=200,
-            font=("Arial", 12),
-            wrap="word"
-        )
-        self.context_textbox.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+        self.context_textbox = ctk.CTkTextbox(context_section, height=180, font=("Segoe UI", 13), fg_color="#111827", text_color="#D1D5DB", border_width=1, border_color="#374151", wrap="word")
+        self.context_textbox.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
 
-        existing_context = ""
         if os.path.exists("temp_context.txt"):
             try:
                 with open("temp_context.txt", "r", encoding="utf-8") as f:
-                    existing_context = f.read()
-                self.context_textbox.insert("0.0", existing_context)
-            except:
-                pass
+                    self.context_textbox.insert("0.0", f.read())
+            except: pass
 
+        # Сучасна кнопка Start
         self.start_button = ctk.CTkButton(
-            main_frame,
-            text="START",
-            font=("Arial", 20, "bold"),
-            height=50,
-            fg_color="#2ecc71",
-            hover_color="#27ae60",
-            command=self.start_application
+            main_frame, text="Launch Copilot", font=("Segoe UI", 16, "bold"), height=50, corner_radius=8,
+            fg_color="#2563EB", hover_color="#1D4ED8", command=self.start_application # Елегантний синій колір
         )
-        self.start_button.grid(row=4, column=0, pady=(10, 0), sticky="ew")
+        self.start_button.grid(row=4, column=0, pady=(0, 20), sticky="ew")
 
     def start_application(self):
         groq_api_key = self.groq_api_key_entry.get().strip()

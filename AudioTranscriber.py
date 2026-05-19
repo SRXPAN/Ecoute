@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from groq import Groq
 from collections import deque
 
-PHRASE_TIMEOUT = 3.0  # Seconds of silence before processing audio
+PHRASE_TIMEOUT = 1.0  # Seconds of silence before processing audio
 MAX_PHRASES = 10  # Maximum number of phrases to keep in transcript
 AUDIO_BUFFER_DURATION = 3.0  # Seconds of audio to accumulate before transcription
 
