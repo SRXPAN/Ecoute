@@ -6,10 +6,10 @@ import numpy as np
 from groq import Groq
 from collections import deque
 
-PHRASE_TIMEOUT = 1.0  # Секунд тиші для відправки тексту
+PHRASE_TIMEOUT = 1.0
 MAX_PHRASES = 10
 MAX_PHRASE_DURATION = 8.0
-RMS_THRESHOLD = 150  # Поріг гучності. Звуки тихіші за це значення вважатимуться абсолютною тишею.
+RMS_THRESHOLD = 30  # ЗНИЖЕНО: Тепер краще ловить звичайну мову
 
 class AudioTranscriber:
     def __init__(self, mic_recorder, speaker_recorder):
@@ -31,6 +31,9 @@ class AudioTranscriber:
             "You": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False},
             "Speaker": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False}
         }
+
+        # СТАТУСИ ДЛЯ ІНТЕРФЕЙСУ
+        self.current_status = {"You": "🟢 Idle", "Speaker": "🟢 Idle"}
 
         self.is_running = False
         print("[INFO] Groq-based audio transcriber initialized with Smart VAD")
@@ -59,28 +62,28 @@ class AudioTranscriber:
                 if audio_chunk:
                     audio_data, timestamp = audio_chunk
 
-                    # Розумний VAD (Аналіз гучності)
                     audio_np = np.frombuffer(audio_data, dtype=np.int16)
-                    # Рахуємо гучність шматка
                     rms = np.sqrt(np.mean(audio_np.astype(np.float32)**2))
 
-                    # Додаємо аудіо в буфер ТІЛЬКИ якщо воно гучніше за фоновий шум
                     if rms > RMS_THRESHOLD:
+                        self.current_status[source_name] = "🎙️ Recording"
                         if not buffer_info["data"]:
                             buffer_info["start_time"] = timestamp
 
                         buffer_info["data"] += audio_data
                         buffer_info["last_audio_time"] = timestamp
+                    else:
+                        if not buffer_info["is_processing"] and not buffer_info["data"]:
+                            self.current_status[source_name] = "🟢 Idle"
+                        elif buffer_info["data"] and not buffer_info["is_processing"]:
+                            self.current_status[source_name] = "🟡 Buffering"
 
-                # Якщо в буфері є накопичений голос, перевіряємо, чи пора відправляти
                 if buffer_info["data"] and buffer_info["last_audio_time"]:
-                    # Оскільки тихі звуки ігноруються, time_since_last_audio буде реально зростати під час тиші!
                     time_since_last_audio = (datetime.utcnow() - buffer_info["last_audio_time"]).total_seconds()
 
                     start_t = buffer_info["start_time"] if buffer_info["start_time"] else buffer_info["last_audio_time"]
                     duration = (datetime.utcnow() - start_t).total_seconds()
 
-                    # Відправляємо якщо настала реальна тиша (1 сек) АБО людина моноложить 8 сек
                     if (time_since_last_audio >= PHRASE_TIMEOUT or duration >= MAX_PHRASE_DURATION) and not buffer_info["is_processing"]:
                         self._process_audio_buffer(source_name)
 
@@ -88,6 +91,7 @@ class AudioTranscriber:
 
             except Exception as e:
                 print(f"[ERROR] Transcription loop error for {source_name}: {e}")
+                self.current_status[source_name] = "🔴 Error"
                 time.sleep(0.5)
 
     def _process_audio_buffer(self, source_name):
@@ -95,10 +99,11 @@ class AudioTranscriber:
         if not buffer_info["data"]: return
 
         buffer_info["is_processing"] = True
+        self.current_status[source_name] = "🟠 Processing"
+
         audio_data = buffer_info["data"]
         timestamp = buffer_info["last_audio_time"]
 
-        # Очищаємо буфер миттєво, щоб ловити наступні слова
         buffer_info["data"] = b""
         buffer_info["start_time"] = None
 
@@ -112,6 +117,8 @@ class AudioTranscriber:
 
     def _transcribe_with_groq(self, source_name, audio_data, timestamp):
         try:
+            self.current_status[source_name] = "⏳ Groq API"
+
             recorder = self.mic_recorder if source_name == "You" else self.speaker_recorder
             wav_bytes = recorder.create_wav_bytes(audio_data)
 
@@ -122,14 +129,18 @@ class AudioTranscriber:
             )
 
             text = transcription.strip()
-            # Фільтруємо типові галюцинації Whisper, які виникають на шумах
             hallucinations = ["you", "thank you", "thanks", "you.", "thanks.", "thank you.", "subtitles by"]
             if text and len(text) > 3 and not any(h in text.lower() for h in hallucinations):
                 self.transcript_data[source_name].appendleft((f"{source_name}: [{text}]\n\n", timestamp))
                 print(f"[TRANSCRIPTION] {source_name}: {text}")
 
+            self.current_status[source_name] = "🟢 Idle"
+
         except Exception as e:
             print(f"[ERROR] Groq transcription failed for {source_name}: {e}")
+            self.current_status[source_name] = "🔴 Error"
+            time.sleep(2)  # Чекаємо 2 сек перед поверненням до Idle
+            self.current_status[source_name] = "🟢 Idle"
 
     def get_transcript(self):
         combined = []
@@ -144,6 +155,9 @@ class AudioTranscriber:
             latest_text, _ = self.transcript_data["Speaker"][0]
             return latest_text.replace("Speaker: [", "").replace("]\n\n", "").strip()
         return ""
+
+    def get_statuses(self):
+        return f"Mic: {self.current_status['You']}  |  Speaker: {self.current_status['Speaker']}"
 
     def clear_transcript_data(self):
         self.transcript_data["You"].clear()
@@ -164,3 +178,4 @@ class AudioTranscriber:
         self.stop()
         self.mic_recorder.close()
         self.speaker_recorder.close()
+

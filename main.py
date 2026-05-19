@@ -16,8 +16,14 @@ def write_in_textbox(textbox, text):
     textbox.delete("0.0", "end")
     textbox.insert("0.0", text)
 
-def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager):
+def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_label):
     global is_generating
+
+    # 1. Оновлюємо текст статусів у реальному часі!
+    current_statuses = transcriber.get_statuses()
+    status_label.configure(text=current_statuses)
+
+    # 2. Оновлюємо транскрипт
     transcript_string = transcriber.get_transcript()
     write_in_textbox(transcript_textbox, transcript_string)
 
@@ -25,21 +31,20 @@ def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, ll
     if latest_speaker_text and len(latest_speaker_text.strip()) > 20:
         if not hasattr(update_transcript_UI, 'last_processed') or update_transcript_UI.last_processed != latest_speaker_text:
 
-            # Перевіряємо, чи не йде зараз генерація
             if not is_generating:
                 update_transcript_UI.last_processed = latest_speaker_text
-                is_generating = True  # Блокуємо нові запити
+                is_generating = True
 
                 def thread_target():
                     global is_generating
                     try:
                         get_ai_suggestion(latest_speaker_text, suggestion_textbox, llm_client, overlay_manager)
                     finally:
-                        is_generating = False  # Розблоковуємо після завершення
+                        is_generating = False
 
                 threading.Thread(target=thread_target, daemon=True).start()
 
-    transcript_textbox.after(300, update_transcript_UI, transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager)
+    transcript_textbox.after(300, update_transcript_UI, transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_label)
 
 def get_ai_suggestion(interviewer_question, suggestion_textbox, llm_client, overlay_manager):
     try:
@@ -83,23 +88,31 @@ def clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager):
 def create_ui_components(root, transcriber, llm_client, overlay_manager):
     root.title("AI Interview Copilot - Dashboard")
     root.geometry("1400x800")
-    root.configure(fg_color="#0F172A") # Темно-синій відтінок (Tailwind Slate-900)
+    root.configure(fg_color="#0F172A")
 
-    root.grid_columnconfigure(0, weight=3) # Трохи більше місця транскрипту
+    root.grid_columnconfigure(0, weight=3)
     root.grid_columnconfigure(1, weight=2)
     root.grid_rowconfigure(0, weight=1)
 
     modern_font = ("Segoe UI", 15)
     title_font = ("Segoe UI", 18, "bold")
 
-    # Ліва панель (Транскрипт)
-    left_frame = ctk.CTkFrame(root, fg_color="#1E293B", corner_radius=12) # Slate-800
+    left_frame = ctk.CTkFrame(root, fg_color="#1E293B", corner_radius=12)
     left_frame.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=20)
     left_frame.grid_columnconfigure(0, weight=1)
     left_frame.grid_rowconfigure(1, weight=1)
 
-    transcript_label = ctk.CTkLabel(left_frame, text="📝 Live Transcript", font=title_font, text_color="#F8FAFC")
-    transcript_label.grid(row=0, column=0, sticky="w", padx=20, pady=(15, 5))
+    # Контейнер для заголовка та статусів
+    header_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
+    header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
+    header_frame.grid_columnconfigure(1, weight=1)
+
+    transcript_label = ctk.CTkLabel(header_frame, text="📝 Live Transcript", font=title_font, text_color="#F8FAFC")
+    transcript_label.grid(row=0, column=0, sticky="w")
+
+    # НОВИЙ ІНДИКАТОР СТАТУСУ
+    status_label = ctk.CTkLabel(header_frame, text="Mic: 🟢 Idle  |  Speaker: 🟢 Idle", font=("Segoe UI", 13, "bold"), text_color="#9CA3AF")
+    status_label.grid(row=0, column=1, sticky="e")
 
     transcript_textbox = ctk.CTkTextbox(
         left_frame, font=modern_font, text_color="#CBD5E1", fg_color="#0F172A",
@@ -110,17 +123,16 @@ def create_ui_components(root, transcriber, llm_client, overlay_manager):
     clear_button = ctk.CTkButton(
         left_frame, text="Clear Session", font=("Segoe UI", 14), height=40, corner_radius=8,
         fg_color="#334155", hover_color="#475569", text_color="#F8FAFC",
-        command=lambda: clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager)
+        command=lambda: clear_context(transcriber, None, llm_client, overlay_manager) # FIX None error
     )
     clear_button.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
 
-    # Права панель (AI Підказки)
     right_frame = ctk.CTkFrame(root, fg_color="#1E293B", corner_radius=12)
     right_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=20)
     right_frame.grid_columnconfigure(0, weight=1)
     right_frame.grid_rowconfigure(1, weight=1)
 
-    suggestion_label = ctk.CTkLabel(right_frame, text="💡 AI Copilot", font=title_font, text_color="#38BDF8") # Блакитний акцент
+    suggestion_label = ctk.CTkLabel(right_frame, text="💡 AI Copilot", font=title_font, text_color="#38BDF8")
     suggestion_label.grid(row=0, column=0, sticky="w", padx=20, pady=(15, 5))
 
     suggestion_textbox = ctk.CTkTextbox(
@@ -137,7 +149,10 @@ def create_ui_components(root, transcriber, llm_client, overlay_manager):
     )
     toggle_overlay_button.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
 
-    return transcript_textbox, suggestion_textbox
+    # Виправляємо лямбду для clear_button
+    clear_button.configure(command=lambda: clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager))
+
+    return transcript_textbox, suggestion_textbox, status_label
 
 def main():
     load_dotenv()
@@ -211,12 +226,12 @@ def main():
         # Register hard exit function
         root.protocol("WM_DELETE_WINDOW", hard_exit)
 
-        transcript_textbox, suggestion_textbox = create_ui_components(root, transcriber, llm_client, overlay_manager)
+        transcript_textbox, suggestion_textbox, status_label = create_ui_components(root, transcriber, llm_client, overlay_manager)
 
         print("READY")
 
         if llm_client:
-            update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager)
+            update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_label)
         else:
             def update_transcript_no_llm():
                 transcript_string = transcriber.get_transcript()
