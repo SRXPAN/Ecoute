@@ -5,12 +5,54 @@ import AudioRecorder
 import time
 import subprocess
 import os
+import ctypes
 from dotenv import load_dotenv
 from LLMClient import LLMClient
 from StealthOverlay import StealthOverlayManager
 
+# Windows API constants for stealth mode
+WDA_EXCLUDEFROMCAPTURE = 0x00000011
+GWL_EXSTYLE = -20
+WS_EX_APPWINDOW = 0x00040000
+WS_EX_TOOLWINDOW = 0x00000080
+
 # Global flag for tracking generation status
 is_generating = False
+
+def apply_total_stealth(window):
+    """
+    Apply complete stealth mode to the main window:
+    1. Hide from screen capture (Zoom, Teams, OBS)
+    2. Hide from Windows Taskbar
+    3. Hide from Alt+Tab menu
+    """
+    try:
+        window.update()
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+
+        if hwnd:
+            # 1. Exclude from screen capture
+            result = ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+            if result:
+                print("[INFO] Main window excluded from screen capture")
+            else:
+                print("[WARNING] Failed to exclude main window from screen capture")
+
+            # 2. Hide from Taskbar and Alt+Tab
+            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            new_style = (ex_style & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+
+            # Force window to update its style
+            window.withdraw()
+            window.deiconify()
+
+            print("[INFO] Main window hidden from Taskbar and Alt+Tab")
+        else:
+            print("[WARNING] Could not get window handle for stealth mode")
+
+    except Exception as e:
+        print(f"[ERROR] Failed to apply total stealth: {e}")
 
 def write_in_textbox(textbox, text):
     textbox.delete("0.0", "end")
@@ -21,12 +63,7 @@ def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, ll
 
     # Update status indicators in real-time
     current_statuses = transcriber.get_statuses()
-
-    # Parse status and update visual indicators
-    mic_status = "🟢" if "Speaking" in current_statuses else "⚪"
-    speaker_status = "🟢" if "Listening" in current_statuses else "⚪"
-
-    status_indicator.configure(text=f"{mic_status} Mic    {speaker_status} Speaker")
+    status_indicator.configure(text=current_statuses)
 
     # Update transcript
     transcript_string = transcriber.get_transcript()
@@ -92,7 +129,7 @@ def clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager):
         delattr(update_transcript_UI, 'last_processed')
 
 def create_ui_components(root, transcriber, llm_client, overlay_manager):
-    root.title("AI Interview Copilot - Live Dashboard")
+    root.title("AI Ecoute")
     root.geometry("1600x900")
 
     # Premium color palette
@@ -199,7 +236,7 @@ def create_ui_components(root, transcriber, llm_client, overlay_manager):
 
     ai_title = ctk.CTkLabel(
         ai_header_container,
-        text="💡 AI Copilot",
+        text="💡Ecoute",
         font=title_font,
         text_color=accent_blue,
         anchor="w"
@@ -284,6 +321,9 @@ def main():
         llm_client = None
 
     root = ctk.CTk()
+
+    # Apply total stealth mode to main window
+    apply_total_stealth(root)
 
     def cleanup_on_exit():
         print("[INFO] Cleaning up temporary files...")
