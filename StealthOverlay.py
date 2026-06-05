@@ -86,6 +86,15 @@ class StealthOverlay:
         )
         title_label.pack(side="left", padx=12)
 
+        # Hotkey hint
+        hotkey_hint = ctk.CTkLabel(
+            header_frame,
+            text="[F9: Hide/Show]",
+            font=("Segoe UI", 9),
+            text_color="#475569"
+        )
+        hotkey_hint.pack(side="left", padx=8)
+
         # Ultra-minimal close button (only visible on hover)
         close_button = ctk.CTkButton(
             header_frame,
@@ -101,21 +110,12 @@ class StealthOverlay:
         )
         close_button.pack(side="right", padx=6)
 
-        # AI suggestion display area - clean and spacious
-        self.text_display = ctk.CTkTextbox(
+        # Scrollable frame to hold Q&A cards
+        self.cards_container = ctk.CTkScrollableFrame(
             main_frame,
-            font=("Segoe UI", 17),
-            text_color="#FFFFFF",
-            fg_color="transparent",
-            wrap="word",
-            spacing1=12,
-            spacing3=12,
-            activate_scrollbars=False
+            fg_color="transparent"
         )
-        self.text_display.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-
-        self.text_display.insert("0.0", "Listening...")
-        self.text_display.configure(state="disabled")
+        self.cards_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     def setup_dragging(self):
         """Enable window dragging by clicking and holding anywhere"""
@@ -178,9 +178,79 @@ class StealthOverlay:
             print(f"[ERROR] Failed to apply screen capture exclusion: {e}")
             print("[WARNING] Overlay will be visible in screen sharing")
 
+    def add_qa_card(self, question_text: str) -> ctk.CTkTextbox:
+        """
+        Create a new Q&A card with question header and dismissable close button.
+        Returns the answer textbox for streaming responses.
+
+        Args:
+            question_text: The interviewer's question
+
+        Returns:
+            CTkTextbox: The answer textbox for streaming AI response
+        """
+        # Card container
+        card = ctk.CTkFrame(
+            self.cards_container,
+            fg_color="#1E293B",
+            corner_radius=10,
+            border_width=1,
+            border_color="#334155"
+        )
+        card.pack(fill="x", padx=5, pady=5)
+
+        # Header container (question + close button)
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=12, pady=(12, 8))
+
+        # Question label (bold, truncated if too long)
+        question_display = question_text if len(question_text) <= 80 else question_text[:80] + "..."
+        question_label = ctk.CTkLabel(
+            header,
+            text=f"Q: {question_display}",
+            font=("Segoe UI", 13, "bold"),
+            text_color="#38BDF8",
+            anchor="w",
+            wraplength=340
+        )
+        question_label.pack(side="left", fill="x", expand=True)
+
+        # Close button
+        close_btn = ctk.CTkButton(
+            header,
+            text="×",
+            width=24,
+            height=24,
+            fg_color="transparent",
+            hover_color="#EF4444",
+            text_color="#64748B",
+            font=("Segoe UI", 16),
+            corner_radius=4,
+            command=card.destroy
+        )
+        close_btn.pack(side="right", padx=(8, 0))
+
+        # Answer textbox (for streaming response)
+        answer_box = ctk.CTkTextbox(
+            card,
+            font=("Segoe UI", 15),
+            text_color="#E2E8F0",
+            fg_color="#0F172A",
+            wrap="word",
+            height=150,
+            spacing1=8,
+            spacing3=8
+        )
+        answer_box.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        answer_box.insert("0.0", "🤔 Thinking...")
+        answer_box.configure(state="disabled")
+
+        return answer_box
+
     def update_text(self, text: str, clear: bool = False):
         """
-        Update the overlay text (thread-safe)
+        Legacy method - kept for backward compatibility
+        Now creates a new card for each question
 
         Args:
             text: Text to display
@@ -189,22 +259,12 @@ class StealthOverlay:
         self.text_queue.put((text, clear))
 
     def update_text_from_queue(self):
-        """Process text updates from queue (runs in main thread)"""
+        """Process text updates from queue (runs in main thread) - Legacy support"""
         try:
             while not self.text_queue.empty():
                 text, clear = self.text_queue.get_nowait()
-
-                self.text_display.configure(state="normal")
-
-                if clear:
-                    self.text_display.delete("0.0", "end")
-
-                self.text_display.insert("end", text)
-
-                # Auto-scroll to bottom
-                self.text_display.see("end")
-
-                self.text_display.configure(state="disabled")
+                # Legacy behavior - ignore for new card-based system
+                pass
 
         except queue.Empty:
             pass
@@ -246,6 +306,15 @@ class StealthOverlay:
     def close_overlay(self):
         """Close the overlay window without destroying it"""
         self.hide()
+
+    def hide_overlay(self):
+        """Hide the overlay window (for panic button)"""
+        self.root.withdraw()
+
+    def show_overlay(self):
+        """Show the overlay window (for panic button)"""
+        self.root.deiconify()
+        self.root.lift()
 
     def is_visible(self):
         """Check if overlay is currently visible"""

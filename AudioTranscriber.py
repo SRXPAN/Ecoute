@@ -33,6 +33,7 @@ class AudioTranscriber:
         self.current_status = {"Speaker": "🟢 Idle"}
 
         self.is_running = False
+        self.is_paused = False  # Manual pause toggle
         print("[INFO] Groq-based audio transcriber initialized with Smart VAD (Speaker only)")
 
     def start(self):
@@ -51,6 +52,22 @@ class AudioTranscriber:
 
         while self.is_running:
             try:
+                # If paused, aggressively clear buffers and skip processing
+                if self.is_paused:
+                    audio_chunk = recorder.get_audio_chunk(timeout=0.1)
+                    # Throw away audio data while paused
+                    if audio_chunk:
+                        pass  # Discard the chunk
+
+                    # Clear any accumulated buffer
+                    if buffer_info["data"]:
+                        buffer_info["data"] = b""
+                        buffer_info["last_audio_time"] = None
+                        buffer_info["start_time"] = None
+
+                    time.sleep(0.1)
+                    continue
+
                 audio_chunk = recorder.get_audio_chunk(timeout=0.1)
 
                 if audio_chunk:
@@ -150,7 +167,18 @@ class AudioTranscriber:
         return ""
 
     def get_statuses(self):
+        if self.is_paused:
+            return "⏸️ PAUSED"
         return self.current_status['Speaker']
+
+    def toggle_pause(self) -> bool:
+        """Toggle pause state and return new state"""
+        self.is_paused = not self.is_paused
+        if self.is_paused:
+            print("[INFO] Transcription PAUSED - audio buffers will be cleared")
+        else:
+            print("[INFO] Transcription RESUMED")
+        return self.is_paused
 
     def clear_transcript_data(self):
         self.transcript_data["Speaker"].clear()

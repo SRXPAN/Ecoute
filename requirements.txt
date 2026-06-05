@@ -6,3 +6,4 @@ sounddevice
 groq
 openai
 pyinstaller
+keyboard
