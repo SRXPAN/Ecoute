@@ -433,7 +433,8 @@ class LauncherApp:
         personas = [
             ("Short Bullets", "Concise bullet points (max 3, highly focused)"),
             ("Technical Deep Dive", "Detailed technical architecture and SDLC focus"),
-            ("STAR Method", "Situation, Task, Action, Result format")
+            ("STAR Method", "Situation, Task, Action, Result format"),
+            ("Coach Advice", "Direct instruction on how to structure your answer")
         ]
 
         for i, (persona_name, persona_desc) in enumerate(personas):

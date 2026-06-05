@@ -64,7 +64,7 @@ pip install pyinstaller
 
 echo.
 echo Compiling Executable...
-pyinstaller --name=WindowsAudioService --onefile --windowed --noconfirm --clean --hidden-import=customtkinter --hidden-import=pyaudiowpatch --hidden-import=groq --hidden-import=openai --hidden-import=dotenv --hidden-import=sounddevice --hidden-import=main --hidden-import=AudioRecorder --hidden-import=AudioTranscriber --hidden-import=LLMClient --hidden-import=StealthOverlay launcher.py
+python build_exe.py
 
 echo.
 echo =======================================

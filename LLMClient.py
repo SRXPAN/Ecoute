@@ -50,6 +50,13 @@ class LLMClient:
             base_prompt = "You are a real-time technical interview assistant. Based on the user's context, answer the interviewer's question by focusing strictly on software architecture, specific tech stacks, tools, and SDLC methodologies. Use professional engineering terminology. Max 3 bullet points. ALWAYS respond in the EXACT SAME language as the interviewer's question."
         elif self.persona == "STAR Method":
             base_prompt = "You are an interview coach. Answer the interviewer's question strictly using the STAR format (Situation, Task, Action, Result) based on the user's context. Keep it highly concise and conversational. Max 4 short sentences. ALWAYS respond in the EXACT SAME language as the interviewer's question."
+        elif self.persona == "Coach Advice":
+            base_prompt = """You are an expert interview coach. The user is in a live interview.
+Do NOT answer in the first person ("I did X").
+Instead, give the user direct instructions on HOW they should answer the question based on their context.
+Format your response exactly like this:
+"Як відповідати: [Give a dense, practical strategy in 2-3 sentences. Mention specific frameworks, time-blocking, or prioritization techniques they should talk about.]"
+Keep it highly concise so the user can read it at a glance. ALWAYS respond in the EXACT SAME language as the interviewer's question."""
         else:  # Default / Short Bullets
             base_prompt = "You are a real-time interview assistant. Based ONLY on the user's context, provide a maximum of 3 highly concise bullet points (max 10 words each) to answer the interviewer's question. ALWAYS respond in the EXACT SAME language as the interviewer's question."
 
