@@ -12,8 +12,9 @@ class LLMClient:
     Optimized for real-time streaming and safe memory management.
     """
 
-    def __init__(self, provider: str = "local"):
+    def __init__(self, provider: str = "local", persona: str = "Short Bullets"):
         self.provider = provider.lower()
+        self.persona = persona
         self.model_name = 'local-model'  # LM Studio ignores this but OpenAI client requires it
         self.context = self._load_interview_context()
         self.system_prompt = self._build_system_prompt()
@@ -26,7 +27,7 @@ class LLMClient:
             api_key="lm-studio"  # LM Studio doesn't validate this but OpenAI client requires it
         )
 
-        print(f"[INFO] Local LLM client initialized successfully, connecting to LM Studio at http://127.0.0.1:1234")
+        print(f"[INFO] Local LLM client initialized successfully (Persona: {self.persona}), connecting to LM Studio at http://127.0.0.1:1234")
 
     def _load_interview_context(self) -> str:
         context_file = "temp_context.txt"
@@ -42,29 +43,18 @@ class LLMClient:
         return ""
 
     def _build_system_prompt(self) -> str:
-        base_prompt = """You are a real-time interview teleprompter assistant. Your user is currently in a live job interview.
+        """
+        Dynamically builds the system prompt based on the selected AI persona.
+        """
+        if self.persona == "Technical Deep Dive":
+            base_prompt = "You are a real-time technical interview assistant. Based on the user's context, answer the interviewer's question by focusing strictly on software architecture, specific tech stacks, tools, and SDLC methodologies. Use professional engineering terminology. Max 3 bullet points. ALWAYS respond in the EXACT SAME language as the interviewer's question."
+        elif self.persona == "STAR Method":
+            base_prompt = "You are an interview coach. Answer the interviewer's question strictly using the STAR format (Situation, Task, Action, Result) based on the user's context. Keep it highly concise and conversational. Max 4 short sentences. ALWAYS respond in the EXACT SAME language as the interviewer's question."
+        else:  # Default / Short Bullets
+            base_prompt = "You are a real-time interview assistant. Based ONLY on the user's context, provide a maximum of 3 highly concise bullet points (max 10 words each) to answer the interviewer's question. ALWAYS respond in the EXACT SAME language as the interviewer's question."
 
-CONTEXT (User's Background):
-{context}
-
-YOUR ROLE:
-- Analyze the interviewer's question in real-time
-- Provide instant, actionable talking points
-- Help the user recall relevant experience from their background
-
-RESPONSE FORMAT (CRITICAL):
-- Respond with EXACTLY 3-4 short bullet points
-- Each bullet point should be 5-10 words maximum
-- Use keywords and key phrases, NOT full sentences
-- NO explanations or elaborations
-- Just the raw bullet points
-
-LANGUAGE RULE (CRITICAL):
-- ALWAYS respond in the EXACT SAME language as the interviewer's question"""
-        if self.context:
-            return base_prompt.format(context=self.context)
-        else:
-            return base_prompt.format(context="[No context provided]")
+        context_str = self.context if self.context else "[No context provided]"
+        return f"{base_prompt}\n\nCONTEXT (User's Background):\n{context_str}"
 
     def _trim_history(self):
         """Keep only the most recent messages to prevent token overflow"""

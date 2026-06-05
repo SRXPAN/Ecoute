@@ -522,7 +522,9 @@ def main():
                 transcriber_global.close()
         except:
             pass
-        os._exit(0)
+        if main_window:
+            main_window.quit()
+            main_window.destroy()
 
     overlay_manager = StealthOverlayManager()
     overlay_mgr = overlay_manager  # Store reference for global hotkey
@@ -575,7 +577,7 @@ def main():
     except Exception as e:
         print(f"[ERROR] Failed to initialize audio system: {e}")
 
-        root.protocol("WM_DELETE_WINDOW", lambda: (cleanup_on_exit(), os._exit(0)))
+        root.protocol("WM_DELETE_WINDOW", lambda: (cleanup_on_exit(), root.quit(), root.destroy()))
 
         transcript_textbox, suggestion_textbox, status_indicator = create_ui_components(root, None, llm_client, overlay_manager)
 

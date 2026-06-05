@@ -4,6 +4,7 @@ import pyaudiowpatch as pyaudio
 from tkinter import messagebox
 import os
 import json
+import sys
 from dotenv import load_dotenv, set_key
 
 class LauncherApp:
