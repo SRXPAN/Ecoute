@@ -180,7 +180,7 @@ def main():
         print("[INFO] No interview context found")
 
     try:
-        llm_client = LLMClient(provider="zhipu")
+        llm_client = LLMClient(provider="local")
         print("[INFO] LLM client initialized successfully")
     except Exception as e:
         print(f"[ERROR] Failed to initialize LLM client: {e}")

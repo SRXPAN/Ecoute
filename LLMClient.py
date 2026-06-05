@@ -5,30 +5,28 @@ from openai import OpenAI
 
 load_dotenv()
 
+
 class LLMClient:
     """
-    LLM client manager utilizing OpenAI-compatible API for Zhipu AI (GLM models).
+    LLM client manager utilizing local LM Studio server via OpenAI-compatible API.
     Optimized for real-time streaming and safe memory management.
     """
 
-    def __init__(self, provider: str = "zhipu"):
+    def __init__(self, provider: str = "local"):
         self.provider = provider.lower()
-        self.model_name = 'glm-4-plus'  # Можна змінити на потрібну версію GLM
+        self.model_name = 'local-model'  # LM Studio ignores this but OpenAI client requires it
         self.context = self._load_interview_context()
         self.system_prompt = self._build_system_prompt()
         self.history = []
-        self.max_history_messages = 6  # Зберігаємо лише останні 3 питання і 3 відповіді
+        self.max_history_messages = 6  # Keep only last 3 Q&A pairs
 
-        api_key = os.getenv("ZHIPU_API_KEY")
-        if not api_key:
-            raise ValueError("ZHIPU_API_KEY not found in environment variables")
-
+        # Connect to local LM Studio server
         self.client = OpenAI(
-            api_key=api_key,
-            base_url="https://open.bigmodel.cn/api/paas/v4/"
+            base_url="http://127.0.0.1:1234/v1",
+            api_key="lm-studio"  # LM Studio doesn't validate this but OpenAI client requires it
         )
 
-        print(f"[INFO] Cloud LLM client initialized successfully with model: {self.model_name}")
+        print(f"[INFO] Local LLM client initialized successfully, connecting to LM Studio at http://127.0.0.1:1234")
 
     def _load_interview_context(self) -> str:
         context_file = "temp_context.txt"
@@ -74,6 +72,7 @@ LANGUAGE RULE (CRITICAL):
             self.history = self.history[-self.max_history_messages:]
 
     def get_suggestion(self, interviewer_question: str) -> Generator[str, None, None]:
+        """Stream AI suggestions token by token"""
         if not interviewer_question or len(interviewer_question.strip()) < 10:
             return
 
@@ -97,14 +96,49 @@ LANGUAGE RULE (CRITICAL):
                     full_response += token
                     yield token
 
+            # Save to conversation history
             self.history.append({'role': 'user', 'content': interviewer_question})
             self.history.append({'role': 'assistant', 'content': full_response})
             self._trim_history()
 
         except Exception as e:
-            print(f"[ERROR] Cloud streaming suggestion failed: {e}")
+            print(f"[ERROR] Local LM Studio streaming failed: {e}")
+            print(f"[ERROR] Make sure LM Studio server is running at http://127.0.0.1:1234")
             yield ""
 
+    def get_suggestion_sync(self, interviewer_question: str) -> str:
+        """Non-streaming fallback method (for testing or error recovery)"""
+        if not interviewer_question or len(interviewer_question.strip()) < 10:
+            return ""
+
+        try:
+            messages = [
+                {'role': 'system', 'content': self.system_prompt}
+            ] + self.history + [
+                {'role': 'user', 'content': interviewer_question}
+            ]
+
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                stream=False
+            )
+
+            full_response = response.choices[0].message.content
+
+            # Save to conversation history
+            self.history.append({'role': 'user', 'content': interviewer_question})
+            self.history.append({'role': 'assistant', 'content': full_response})
+            self._trim_history()
+
+            return full_response
+
+        except Exception as e:
+            print(f"[ERROR] Local LM Studio sync request failed: {e}")
+            print(f"[ERROR] Make sure LM Studio server is running at http://127.0.0.1:1234")
+            return ""
+
     def reset_conversation(self):
+        """Clear conversation history"""
         self.history = []
         print("[INFO] Conversation history reset")

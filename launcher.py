@@ -14,7 +14,7 @@ class LauncherApp:
         ctk.set_default_color_theme("dark-blue")
 
         self.root.title("AI Interview Copilot Launcher")
-        self.root.geometry("800x800")
+        self.root.geometry("800x750")
 
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
@@ -78,12 +78,11 @@ class LauncherApp:
             messagebox.showerror("Error", f"Failed to scan audio devices: {str(e)}")
 
     def create_ui(self):
-        # Налаштовуємо сучасний базовий шрифт для всього вікна
         modern_font = ("Segoe UI", 14)
         title_font = ("Segoe UI", 24, "bold")
         header_font = ("Segoe UI", 16, "bold")
 
-        self.root.configure(fg_color="#111827") # Глибокий темний фон (Tailwind Gray-900)
+        self.root.configure(fg_color="#111827")
 
         main_frame = ctk.CTkScrollableFrame(self.root, fg_color="transparent")
         main_frame.grid(row=0, column=0, sticky="nsew", padx=40, pady=40)
@@ -97,7 +96,7 @@ class LauncherApp:
         )
         title_label.grid(row=0, column=0, pady=(0, 30), sticky="w")
 
-        # Картка 1: Аудіо
+        # Card 1: Audio Setup
         audio_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
         audio_section.grid(row=1, column=0, sticky="ew", pady=(0, 20), ipady=10)
         audio_section.grid_columnconfigure(1, weight=1)
@@ -115,7 +114,7 @@ class LauncherApp:
         self.speaker_dropdown = ctk.CTkComboBox(audio_section, values=["Scanning..."], width=400, font=modern_font, fg_color="#374151", border_width=0, button_color="#4B5563", state="readonly")
         self.speaker_dropdown.grid(row=2, column=1, padx=20, pady=(10, 15), sticky="ew")
 
-        # Картка 2: API Ключі
+        # Card 2: API Credentials (Only Groq for transcription)
         llm_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
         llm_section.grid(row=2, column=0, sticky="ew", pady=(0, 20), ipady=10)
         llm_section.grid_columnconfigure(1, weight=1)
@@ -123,21 +122,23 @@ class LauncherApp:
         llm_title = ctk.CTkLabel(llm_section, text="🔑 API Credentials", font=header_font, text_color="#E5E7EB")
         llm_title.grid(row=0, column=0, columnspan=2, pady=(15, 15), padx=20, sticky="w")
 
-        groq_label = ctk.CTkLabel(llm_section, text="Groq API Key:", font=modern_font, text_color="#9CA3AF")
+        groq_label = ctk.CTkLabel(llm_section, text="Groq API Key (Transcription):", font=modern_font, text_color="#9CA3AF")
         groq_label.grid(row=1, column=0, padx=20, pady=10, sticky="w")
         self.groq_api_key_entry = ctk.CTkEntry(llm_section, width=400, show="•", font=modern_font, fg_color="#374151", border_width=0, placeholder_text="gsk_...")
         existing_groq_key = os.getenv("GROQ_API_KEY", "")
         if existing_groq_key: self.groq_api_key_entry.insert(0, existing_groq_key)
-        self.groq_api_key_entry.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
+        self.groq_api_key_entry.grid(row=1, column=1, padx=20, pady=(10, 15), sticky="ew")
 
-        zhipu_label = ctk.CTkLabel(llm_section, text="Zhipu API Key:", font=modern_font, text_color="#9CA3AF")
-        zhipu_label.grid(row=2, column=0, padx=20, pady=10, sticky="w")
-        self.zhipu_api_key_entry = ctk.CTkEntry(llm_section, width=400, show="•", font=modern_font, fg_color="#374151", border_width=0, placeholder_text="...")
-        existing_zhipu_key = os.getenv("ZHIPU_API_KEY", "")
-        if existing_zhipu_key: self.zhipu_api_key_entry.insert(0, existing_zhipu_key)
-        self.zhipu_api_key_entry.grid(row=2, column=1, padx=20, pady=(10, 15), sticky="ew")
+        # Info label about local LM Studio
+        info_label = ctk.CTkLabel(
+            llm_section,
+            text="ℹ️ AI suggestions powered by local LM Studio (http://127.0.0.1:1234)",
+            font=("Segoe UI", 12),
+            text_color="#6B7280"
+        )
+        info_label.grid(row=2, column=0, columnspan=2, padx=20, pady=(5, 15), sticky="w")
 
-        # Картка 3: Контекст
+        # Card 3: Interview Context
         context_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
         context_section.grid(row=3, column=0, sticky="ew", pady=(0, 30))
         context_section.grid_columnconfigure(0, weight=1)
@@ -154,23 +155,18 @@ class LauncherApp:
                     self.context_textbox.insert("0.0", f.read())
             except: pass
 
-        # Сучасна кнопка Start
+        # Launch Button
         self.start_button = ctk.CTkButton(
             main_frame, text="Launch Copilot", font=("Segoe UI", 16, "bold"), height=50, corner_radius=8,
-            fg_color="#2563EB", hover_color="#1D4ED8", command=self.start_application # Елегантний синій колір
+            fg_color="#2563EB", hover_color="#1D4ED8", command=self.start_application
         )
         self.start_button.grid(row=4, column=0, pady=(0, 20), sticky="ew")
 
     def start_application(self):
         groq_api_key = self.groq_api_key_entry.get().strip()
-        zhipu_api_key = self.zhipu_api_key_entry.get().strip()
 
         if not groq_api_key:
             messagebox.showerror("Error", "Please enter your Groq API key for transcription")
-            return
-
-        if not zhipu_api_key:
-            messagebox.showerror("Error", "Please enter your Zhipu API key for AI assistance")
             return
 
         context_text = self.context_textbox.get("0.0", "end-1c").strip()
@@ -211,7 +207,6 @@ class LauncherApp:
                 f.write("")
 
         set_key(env_file, "GROQ_API_KEY", groq_api_key)
-        set_key(env_file, "ZHIPU_API_KEY", zhipu_api_key)
         set_key(env_file, "MIC_DEVICE_INDEX", str(mic_index))
         set_key(env_file, "SPEAKER_DEVICE_INDEX", str(speaker_index))
 
