@@ -12,8 +12,7 @@ MAX_PHRASE_DURATION = 8.0
 RMS_THRESHOLD = 30  # ЗНИЖЕНО: Тепер краще ловить звичайну мову
 
 class AudioTranscriber:
-    def __init__(self, mic_recorder, speaker_recorder):
-        self.mic_recorder = mic_recorder
+    def __init__(self, speaker_recorder):
         self.speaker_recorder = speaker_recorder
 
         api_key = os.getenv("GROQ_API_KEY")
@@ -23,36 +22,31 @@ class AudioTranscriber:
         self.groq_client = Groq(api_key=api_key)
 
         self.transcript_data = {
-            "You": deque(maxlen=MAX_PHRASES),
             "Speaker": deque(maxlen=MAX_PHRASES)
         }
 
         self.audio_buffers = {
-            "You": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False},
             "Speaker": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False}
         }
 
         # СТАТУСИ ДЛЯ ІНТЕРФЕЙСУ
-        self.current_status = {"You": "🟢 Idle", "Speaker": "🟢 Idle"}
+        self.current_status = {"Speaker": "🟢 Idle"}
 
         self.is_running = False
-        print("[INFO] Groq-based audio transcriber initialized with Smart VAD")
+        print("[INFO] Groq-based audio transcriber initialized with Smart VAD (Speaker only)")
 
     def start(self):
         if self.is_running: return
         self.is_running = True
-        self.mic_recorder.start_recording()
         self.speaker_recorder.start_recording()
 
-        self.mic_thread = threading.Thread(target=self._transcribe_loop, args=("You",), daemon=True)
         self.speaker_thread = threading.Thread(target=self._transcribe_loop, args=("Speaker",), daemon=True)
 
-        self.mic_thread.start()
         self.speaker_thread.start()
-        print("[INFO] Transcription started")
+        print("[INFO] Transcription started (Speaker only)")
 
     def _transcribe_loop(self, source_name):
-        recorder = self.mic_recorder if source_name == "You" else self.speaker_recorder
+        recorder = self.speaker_recorder
         buffer_info = self.audio_buffers[source_name]
 
         while self.is_running:
@@ -119,7 +113,7 @@ class AudioTranscriber:
         try:
             self.current_status[source_name] = "⏳ Groq API"
 
-            recorder = self.mic_recorder if source_name == "You" else self.speaker_recorder
+            recorder = self.speaker_recorder
             wav_bytes = recorder.create_wav_bytes(audio_data)
 
             transcription = self.groq_client.audio.transcriptions.create(
@@ -144,9 +138,8 @@ class AudioTranscriber:
 
     def get_transcript(self):
         combined = []
-        for source_name in ["You", "Speaker"]:
-            for text, timestamp in self.transcript_data[source_name]:
-                combined.append((text, timestamp))
+        for text, timestamp in self.transcript_data["Speaker"]:
+            combined.append((text, timestamp))
         combined.sort(key=lambda x: x[1], reverse=True)
         return "".join([text for text, _ in combined[:MAX_PHRASES]])
 
@@ -157,25 +150,21 @@ class AudioTranscriber:
         return ""
 
     def get_statuses(self):
-        return f"Mic: {self.current_status['You']}  |  Speaker: {self.current_status['Speaker']}"
+        return self.current_status['Speaker']
 
     def clear_transcript_data(self):
-        self.transcript_data["You"].clear()
         self.transcript_data["Speaker"].clear()
-        for source_name in ["You", "Speaker"]:
-            self.audio_buffers[source_name]["data"] = b""
-            self.audio_buffers[source_name]["last_audio_time"] = None
-            self.audio_buffers[source_name]["start_time"] = None
+        self.audio_buffers["Speaker"]["data"] = b""
+        self.audio_buffers["Speaker"]["last_audio_time"] = None
+        self.audio_buffers["Speaker"]["start_time"] = None
         print("[INFO] Transcript data cleared")
 
     def stop(self):
         self.is_running = False
-        self.mic_recorder.stop_recording()
         self.speaker_recorder.stop_recording()
         print("[INFO] Transcription stopped")
 
     def close(self):
         self.stop()
-        self.mic_recorder.close()
         self.speaker_recorder.close()
 

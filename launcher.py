@@ -19,7 +19,6 @@ class LauncherApp:
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
 
-        self.mic_devices = []
         self.speaker_devices = []
 
         self.create_ui()
@@ -30,17 +29,7 @@ class LauncherApp:
             with pyaudio.PyAudio() as p:
                 wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
 
-                self.mic_devices = []
                 self.speaker_devices = []
-
-                for i in range(p.get_device_count()):
-                    device_info = p.get_device_info_by_index(i)
-
-                    if device_info["maxInputChannels"] > 0 and not device_info.get("isLoopbackDevice", False):
-                        self.mic_devices.append({
-                            "index": i,
-                            "name": device_info["name"]
-                        })
 
                 for loopback in p.get_loopback_device_info_generator():
                     self.speaker_devices.append({
@@ -54,21 +43,9 @@ class LauncherApp:
                         speaker["name"] += " (Default)"
                         break
 
-                default_input_device = p.get_device_info_by_index(wasapi_info["defaultInputDevice"])
-                for mic in self.mic_devices:
-                    if mic["index"] == default_input_device["index"]:
-                        mic["name"] += " (Default)"
-                        break
-
-            mic_names = [device["name"] for device in self.mic_devices]
             speaker_names = [device["name"] for device in self.speaker_devices]
 
-            self.mic_dropdown.configure(values=mic_names)
             self.speaker_dropdown.configure(values=speaker_names)
-
-            if mic_names:
-                default_mic = next((name for name in mic_names if "(Default)" in name), mic_names[0])
-                self.mic_dropdown.set(default_mic)
 
             if speaker_names:
                 default_speaker = next((name for name in speaker_names if "(Default)" in name), speaker_names[0])
@@ -138,33 +115,6 @@ class LauncherApp:
         )
         audio_header.grid(row=0, column=0, columnspan=2, padx=30, pady=(25, 20), sticky="w")
 
-        # Microphone section
-        mic_label = ctk.CTkLabel(
-            audio_card,
-            text="Microphone Input",
-            font=label_font,
-            text_color=text_secondary,
-            anchor="w"
-        )
-        mic_label.grid(row=1, column=0, padx=30, pady=(10, 8), sticky="w")
-
-        self.mic_dropdown = ctk.CTkComboBox(
-            audio_card,
-            values=["Scanning devices..."],
-            font=input_font,
-            fg_color=input_bg,
-            border_color=input_border,
-            button_color=input_border,
-            button_hover_color=accent_blue,
-            dropdown_fg_color=card_bg,
-            dropdown_hover_color=input_bg,
-            text_color=text_primary,
-            state="readonly",
-            corner_radius=10,
-            height=45
-        )
-        self.mic_dropdown.grid(row=2, column=0, columnspan=2, padx=30, pady=(0, 20), sticky="ew")
-
         # Speaker section
         speaker_label = ctk.CTkLabel(
             audio_card,
@@ -173,7 +123,7 @@ class LauncherApp:
             text_color=text_secondary,
             anchor="w"
         )
-        speaker_label.grid(row=3, column=0, padx=30, pady=(10, 8), sticky="w")
+        speaker_label.grid(row=1, column=0, padx=30, pady=(10, 8), sticky="w")
 
         self.speaker_dropdown = ctk.CTkComboBox(
             audio_card,
@@ -190,7 +140,7 @@ class LauncherApp:
             corner_radius=10,
             height=45
         )
-        self.speaker_dropdown.grid(row=4, column=0, columnspan=2, padx=30, pady=(0, 25), sticky="ew")
+        self.speaker_dropdown.grid(row=2, column=0, columnspan=2, padx=30, pady=(0, 25), sticky="ew")
 
         # Card 2: API Configuration
         api_card = ctk.CTkFrame(main_frame, fg_color=card_bg, corner_radius=16)
@@ -322,18 +272,11 @@ class LauncherApp:
             if not response:
                 return
 
-        mic_selection = self.mic_dropdown.get()
         speaker_selection = self.speaker_dropdown.get()
 
-        if mic_selection == "Scanning devices..." or speaker_selection == "Scanning devices...":
+        if speaker_selection == "Scanning devices...":
             messagebox.showerror("Error", "Audio devices are still scanning. Please wait.")
             return
-
-        mic_index = None
-        for device in self.mic_devices:
-            if device["name"] == mic_selection:
-                mic_index = device["index"]
-                break
 
         speaker_index = None
         for device in self.speaker_devices:
@@ -341,8 +284,8 @@ class LauncherApp:
                 speaker_index = device["index"]
                 break
 
-        if mic_index is None or speaker_index is None:
-            messagebox.showerror("Error", "Failed to get audio device indices")
+        if speaker_index is None:
+            messagebox.showerror("Error", "Failed to get audio device index")
             return
 
         env_file = ".env"
@@ -351,7 +294,6 @@ class LauncherApp:
                 f.write("")
 
         set_key(env_file, "GROQ_API_KEY", groq_api_key)
-        set_key(env_file, "MIC_DEVICE_INDEX", str(mic_index))
         set_key(env_file, "SPEAKER_DEVICE_INDEX", str(speaker_index))
 
         with open("temp_context.txt", "w", encoding="utf-8") as f:

@@ -62,8 +62,8 @@ def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, ll
     global is_generating
 
     # Update status indicators in real-time
-    current_statuses = transcriber.get_statuses()
-    status_indicator.configure(text=current_statuses)
+    speaker_status = transcriber.get_statuses()
+    status_indicator.configure(text=f"{speaker_status} Speaker")
 
     # Update transcript
     transcript_string = transcriber.get_transcript()
@@ -179,7 +179,7 @@ def create_ui_components(root, transcriber, llm_client, overlay_manager):
     # Status indicator with visual dots
     status_indicator = ctk.CTkLabel(
         header_container,
-        text="⚪ Mic    ⚪ Speaker",
+        text="⚪ Speaker",
         font=status_font,
         text_color=text_muted,
         anchor="e"
@@ -290,13 +290,7 @@ def create_ui_components(root, transcriber, llm_client, overlay_manager):
 def main():
     load_dotenv()
 
-    mic_device_index = os.getenv("MIC_DEVICE_INDEX")
     speaker_device_index = os.getenv("SPEAKER_DEVICE_INDEX")
-
-    if mic_device_index:
-        mic_device_index = int(mic_device_index)
-    else:
-        mic_device_index = None
 
     if speaker_device_index:
         speaker_device_index = int(speaker_device_index)
@@ -348,10 +342,9 @@ def main():
     print("[INFO] Stealth overlay created")
 
     try:
-        mic_recorder = AudioRecorder.DefaultMicRecorder(device_index=mic_device_index)
         speaker_recorder = AudioRecorder.DefaultSpeakerRecorder(device_index=speaker_device_index)
 
-        transcriber = AudioTranscriber(mic_recorder, speaker_recorder)
+        transcriber = AudioTranscriber(speaker_recorder)
         transcriber.start()
 
         root.protocol("WM_DELETE_WINDOW", hard_exit)
