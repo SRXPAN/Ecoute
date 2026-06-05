@@ -110,7 +110,7 @@ class LauncherApp:
 
         title_label = ctk.CTkLabel(
             hero_frame,
-            text="AI Interview Copilot",
+            text="AI Copilot",
             font=title_font,
             text_color=text_primary
         )

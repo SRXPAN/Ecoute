@@ -4,9 +4,12 @@ import threading
 from typing import Optional
 import queue
 
-# Windows API constants for screen capture exclusion
+# Windows API constants for screen capture exclusion and taskbar hiding
 WDA_EXCLUDEFROMCAPTURE = 0x00000011
 WDA_NONE = 0x00000000
+GWL_EXSTYLE = -20
+WS_EX_APPWINDOW = 0x00040000
+WS_EX_TOOLWINDOW = 0x00000080
 
 class StealthOverlay:
     """
@@ -27,7 +30,7 @@ class StealthOverlay:
         self.root.withdraw()  # Hide initially
 
         # Window configuration
-        self.root.title("AI Assistant")
+        self.root.title("Assistant")
         self.root.geometry("450x350+100+100")
 
         # Remove window decorations (frameless)
@@ -77,7 +80,7 @@ class StealthOverlay:
         # Title with minimal styling
         title_label = ctk.CTkLabel(
             header_frame,
-            text="AI Copilot",
+            text="Assistant",
             font=("Segoe UI", 11, "bold"),
             text_color="#64748B"
         )
@@ -157,6 +160,17 @@ class StealthOverlay:
                     print("[INFO] Stealth mode activated - Window excluded from screen capture")
                 else:
                     print("[WARNING] Failed to apply screen capture exclusion")
+
+                # Hide from Taskbar and Alt+Tab
+                ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                new_style = (ex_style & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW
+                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+
+                # Force window to update its style
+                self.root.withdraw()
+                self.root.deiconify()
+
+                print("[INFO] Overlay hidden from Taskbar and Alt+Tab")
             else:
                 print("[WARNING] Could not get window handle for screen capture exclusion")
 
