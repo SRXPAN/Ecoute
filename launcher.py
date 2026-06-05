@@ -581,7 +581,10 @@ class LauncherApp:
             err_root.withdraw()
             messagebox.showerror("Error", f"Failed to start main application: {str(e)}")
             err_root.destroy()
-            return
+        
+        # Restart the entire process to return to the launcher cleanly
+        print("[INFO] Restarting Launcher...")
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
     def run(self):
         self.root.mainloop()
