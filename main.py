@@ -9,21 +9,26 @@ from dotenv import load_dotenv
 from LLMClient import LLMClient
 from StealthOverlay import StealthOverlayManager
 
-# Глобальний прапорець для відстеження статусу генерації
+# Global flag for tracking generation status
 is_generating = False
 
 def write_in_textbox(textbox, text):
     textbox.delete("0.0", "end")
     textbox.insert("0.0", text)
 
-def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_label):
+def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_indicator):
     global is_generating
 
-    # 1. Оновлюємо текст статусів у реальному часі!
+    # Update status indicators in real-time
     current_statuses = transcriber.get_statuses()
-    status_label.configure(text=current_statuses)
 
-    # 2. Оновлюємо транскрипт
+    # Parse status and update visual indicators
+    mic_status = "🟢" if "Speaking" in current_statuses else "⚪"
+    speaker_status = "🟢" if "Listening" in current_statuses else "⚪"
+
+    status_indicator.configure(text=f"{mic_status} Mic    {speaker_status} Speaker")
+
+    # Update transcript
     transcript_string = transcriber.get_transcript()
     write_in_textbox(transcript_textbox, transcript_string)
 
@@ -44,29 +49,29 @@ def update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, ll
 
                 threading.Thread(target=thread_target, daemon=True).start()
 
-    transcript_textbox.after(300, update_transcript_UI, transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_label)
+    transcript_textbox.after(300, update_transcript_UI, transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_indicator)
 
 def get_ai_suggestion(interviewer_question, suggestion_textbox, llm_client, overlay_manager):
     try:
         suggestion_textbox.delete("0.0", "end")
-        suggestion_textbox.insert("0.0", "🤔 Thinking...\n")
+        suggestion_textbox.insert("0.0", "🤔 Analyzing question...\n")
 
         full_response = ""
         response_generator = llm_client.get_suggestion(interviewer_question)
 
-        # 1. Очищаємо оверлей перед початком нової відповіді
+        # Clear overlay before new response
         overlay_manager.update_suggestions("", clear=True)
 
-        # 2. Стрімимо токени одночасно і в головне вікно, і в оверлей
+        # Stream tokens to both dashboard and overlay
         for token in response_generator:
             full_response += token
 
-            # Оновлюємо дашборд
+            # Update dashboard
             suggestion_textbox.delete("0.0", "end")
             suggestion_textbox.insert("0.0", full_response)
             suggestion_textbox.update()
 
-            # Миттєво відправляємо шматок тексту в оверлей
+            # Stream to overlay
             overlay_manager.update_suggestions(token, clear=False)
 
     except Exception as e:
@@ -79,80 +84,171 @@ def clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager):
     transcriber.clear_transcript_data()
 
     suggestion_textbox.delete("0.0", "end")
+    suggestion_textbox.insert("0.0", "Ready for next question...")
     llm_client.reset_conversation()
-    overlay_manager.update_suggestions("Waiting for interviewer's question...\n\n", clear=True)
+    overlay_manager.update_suggestions("Ready for next question...", clear=True)
 
     if hasattr(update_transcript_UI, 'last_processed'):
         delattr(update_transcript_UI, 'last_processed')
 
 def create_ui_components(root, transcriber, llm_client, overlay_manager):
-    root.title("AI Interview Copilot - Dashboard")
-    root.geometry("1400x800")
-    root.configure(fg_color="#0F172A")
+    root.title("AI Interview Copilot - Live Dashboard")
+    root.geometry("1600x900")
 
+    # Premium color palette
+    bg_dark = "#0F172A"
+    sidebar_bg = "#1E293B"
+    card_bg = "#1E293B"
+    accent_blue = "#38BDF8"
+    accent_purple = "#A78BFA"
+    text_primary = "#F8FAFC"
+    text_secondary = "#CBD5E1"
+    text_muted = "#94A3B8"
+    border_color = "#334155"
+
+    root.configure(fg_color=bg_dark)
+
+    # Grid layout: left panel (transcript) + right panel (AI suggestions)
     root.grid_columnconfigure(0, weight=3)
     root.grid_columnconfigure(1, weight=2)
     root.grid_rowconfigure(0, weight=1)
 
-    modern_font = ("Segoe UI", 15)
-    title_font = ("Segoe UI", 18, "bold")
+    # Premium typography
+    title_font = ("Segoe UI", 22, "bold")
+    content_font = ("Segoe UI", 16)
+    status_font = ("Segoe UI", 13)
+    button_font = ("Segoe UI", 15, "bold")
 
-    left_frame = ctk.CTkFrame(root, fg_color="#1E293B", corner_radius=12)
-    left_frame.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=20)
-    left_frame.grid_columnconfigure(0, weight=1)
-    left_frame.grid_rowconfigure(1, weight=1)
+    # ========== LEFT PANEL: Live Transcript ==========
+    left_panel = ctk.CTkFrame(root, fg_color=card_bg, corner_radius=0)
+    left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 1), pady=0)
+    left_panel.grid_columnconfigure(0, weight=1)
+    left_panel.grid_rowconfigure(2, weight=1)
 
-    # Контейнер для заголовка та статусів
-    header_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
-    header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
-    header_frame.grid_columnconfigure(1, weight=1)
+    # Header with title and status indicators
+    header_container = ctk.CTkFrame(left_panel, fg_color="transparent")
+    header_container.grid(row=0, column=0, sticky="ew", padx=35, pady=(30, 5))
+    header_container.grid_columnconfigure(1, weight=1)
 
-    transcript_label = ctk.CTkLabel(header_frame, text="📝 Live Transcript", font=title_font, text_color="#F8FAFC")
-    transcript_label.grid(row=0, column=0, sticky="w")
+    transcript_title = ctk.CTkLabel(
+        header_container,
+        text="📝 Live Transcript",
+        font=title_font,
+        text_color=text_primary,
+        anchor="w"
+    )
+    transcript_title.grid(row=0, column=0, sticky="w")
 
-    # НОВИЙ ІНДИКАТОР СТАТУСУ
-    status_label = ctk.CTkLabel(header_frame, text="Mic: 🟢 Idle  |  Speaker: 🟢 Idle", font=("Segoe UI", 13, "bold"), text_color="#9CA3AF")
-    status_label.grid(row=0, column=1, sticky="e")
+    # Status indicator with visual dots
+    status_indicator = ctk.CTkLabel(
+        header_container,
+        text="⚪ Mic    ⚪ Speaker",
+        font=status_font,
+        text_color=text_muted,
+        anchor="e"
+    )
+    status_indicator.grid(row=0, column=1, sticky="e", padx=(10, 0))
 
+    # Subtitle
+    subtitle_label = ctk.CTkLabel(
+        left_panel,
+        text="Real-time conversation transcription",
+        font=("Segoe UI", 13),
+        text_color=text_muted,
+        anchor="w"
+    )
+    subtitle_label.grid(row=1, column=0, sticky="w", padx=35, pady=(5, 20))
+
+    # Transcript textbox - clean, spacious design
     transcript_textbox = ctk.CTkTextbox(
-        left_frame, font=modern_font, text_color="#CBD5E1", fg_color="#0F172A",
-        border_width=1, border_color="#334155", wrap="word", spacing1=5
+        left_panel,
+        font=content_font,
+        text_color=text_secondary,
+        fg_color=bg_dark,
+        border_width=0,
+        corner_radius=0,
+        wrap="word",
+        spacing1=8,
+        spacing3=8
     )
-    transcript_textbox.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
+    transcript_textbox.grid(row=2, column=0, sticky="nsew", padx=35, pady=(0, 20))
 
+    # Clear button with subtle styling
     clear_button = ctk.CTkButton(
-        left_frame, text="Clear Session", font=("Segoe UI", 14), height=40, corner_radius=8,
-        fg_color="#334155", hover_color="#475569", text_color="#F8FAFC",
-        command=lambda: clear_context(transcriber, None, llm_client, overlay_manager) # FIX None error
+        left_panel,
+        text="Clear Session",
+        font=button_font,
+        height=50,
+        corner_radius=10,
+        fg_color=border_color,
+        hover_color="#475569",
+        text_color=text_primary,
+        command=lambda: clear_context(transcriber, None, llm_client, overlay_manager)
     )
-    clear_button.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
+    clear_button.grid(row=3, column=0, sticky="ew", padx=35, pady=(0, 30))
 
-    right_frame = ctk.CTkFrame(root, fg_color="#1E293B", corner_radius=12)
-    right_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=20)
-    right_frame.grid_columnconfigure(0, weight=1)
-    right_frame.grid_rowconfigure(1, weight=1)
+    # ========== RIGHT PANEL: AI Copilot ==========
+    right_panel = ctk.CTkFrame(root, fg_color=card_bg, corner_radius=0)
+    right_panel.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
+    right_panel.grid_columnconfigure(0, weight=1)
+    right_panel.grid_rowconfigure(2, weight=1)
 
-    suggestion_label = ctk.CTkLabel(right_frame, text="💡 AI Copilot", font=title_font, text_color="#38BDF8")
-    suggestion_label.grid(row=0, column=0, sticky="w", padx=20, pady=(15, 5))
+    # AI Copilot header with gradient-style accent
+    ai_header_container = ctk.CTkFrame(right_panel, fg_color="transparent")
+    ai_header_container.grid(row=0, column=0, sticky="ew", padx=35, pady=(30, 5))
 
+    ai_title = ctk.CTkLabel(
+        ai_header_container,
+        text="💡 AI Copilot",
+        font=title_font,
+        text_color=accent_blue,
+        anchor="w"
+    )
+    ai_title.grid(row=0, column=0, sticky="w")
+
+    # AI subtitle
+    ai_subtitle = ctk.CTkLabel(
+        right_panel,
+        text="Instant talking points powered by local LLM",
+        font=("Segoe UI", 13),
+        text_color=text_muted,
+        anchor="w"
+    )
+    ai_subtitle.grid(row=1, column=0, sticky="w", padx=35, pady=(5, 20))
+
+    # AI suggestion textbox - prominent, high-contrast
     suggestion_textbox = ctk.CTkTextbox(
-        right_frame, font=("Segoe UI", 16), text_color="#38BDF8", fg_color="#0F172A",
-        border_width=1, border_color="#334155", wrap="word", spacing1=8
+        right_panel,
+        font=("Segoe UI", 17),
+        text_color=accent_blue,
+        fg_color=bg_dark,
+        border_width=0,
+        corner_radius=0,
+        wrap="word",
+        spacing1=10,
+        spacing3=10
     )
-    suggestion_textbox.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
-    suggestion_textbox.insert("0.0", "Waiting for the first question...")
+    suggestion_textbox.grid(row=2, column=0, sticky="nsew", padx=35, pady=(0, 20))
+    suggestion_textbox.insert("0.0", "Waiting for interviewer's question...")
 
+    # Toggle overlay button - vibrant accent
     toggle_overlay_button = ctk.CTkButton(
-        right_frame, text="Toggle Stealth Overlay", font=("Segoe UI", 14, "bold"), height=40, corner_radius=8,
-        fg_color="#0EA5E9", hover_color="#0284C7", text_color="#FFFFFF",
+        right_panel,
+        text="Toggle Stealth Overlay",
+        font=button_font,
+        height=50,
+        corner_radius=10,
+        fg_color="#2563EB",
+        hover_color="#1D4ED8",
+        text_color=text_primary,
         command=overlay_manager.toggle_visibility
     )
-    toggle_overlay_button.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
+    toggle_overlay_button.grid(row=3, column=0, sticky="ew", padx=35, pady=(0, 30))
 
-    # Виправляємо лямбду для clear_button
+    # Fix clear button lambda
     clear_button.configure(command=lambda: clear_context(transcriber, suggestion_textbox, llm_client, overlay_manager))
 
-    return transcript_textbox, suggestion_textbox, status_label
+    return transcript_textbox, suggestion_textbox, status_indicator
 
 def main():
     load_dotenv()
@@ -189,7 +285,6 @@ def main():
 
     root = ctk.CTk()
 
-    # Cleanup function to remove temp files on exit
     def cleanup_on_exit():
         print("[INFO] Cleaning up temporary files...")
         try:
@@ -199,7 +294,6 @@ def main():
         except Exception as e:
             print(f"[WARNING] Failed to cleanup temp files: {e}")
 
-    # Hard exit function to kill all threads and process
     def hard_exit():
         print("[INFO] Initiating hard exit...")
         cleanup_on_exit()
@@ -207,35 +301,31 @@ def main():
             transcriber.close()
         except:
             pass
-        os._exit(0)  # Immediately terminates all threads and the process
+        os._exit(0)
 
-    # Create stealth overlay manager
     overlay_manager = StealthOverlayManager()
     overlay_manager.create_overlay()
     print("[INFO] Stealth overlay created")
 
-    # Create audio recorders with error handling
     try:
         mic_recorder = AudioRecorder.DefaultMicRecorder(device_index=mic_device_index)
         speaker_recorder = AudioRecorder.DefaultSpeakerRecorder(device_index=speaker_device_index)
 
-        # Create transcriber with new pure Groq API pipeline
         transcriber = AudioTranscriber(mic_recorder, speaker_recorder)
         transcriber.start()
 
-        # Register hard exit function
         root.protocol("WM_DELETE_WINDOW", hard_exit)
 
-        transcript_textbox, suggestion_textbox, status_label = create_ui_components(root, transcriber, llm_client, overlay_manager)
+        transcript_textbox, suggestion_textbox, status_indicator = create_ui_components(root, transcriber, llm_client, overlay_manager)
 
         print("READY")
 
         if llm_client:
-            update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_label)
+            update_transcript_UI(transcriber, transcript_textbox, suggestion_textbox, llm_client, overlay_manager, status_indicator)
         else:
             def update_transcript_no_llm():
                 transcript_string = transcriber.get_transcript()
-                write_in_textbox(transcript_textbox, transcript_textbox)
+                write_in_textbox(transcript_textbox, transcript_string)
                 transcript_textbox.after(300, update_transcript_no_llm)
             update_transcript_no_llm()
 
@@ -244,11 +334,9 @@ def main():
     except Exception as e:
         print(f"[ERROR] Failed to initialize audio system: {e}")
 
-        # Register cleanup for error case
         root.protocol("WM_DELETE_WINDOW", lambda: (cleanup_on_exit(), os._exit(0)))
 
-        # Create minimal UI to show error
-        transcript_textbox, suggestion_textbox = create_ui_components(root, None, llm_client, overlay_manager)
+        transcript_textbox, suggestion_textbox, status_indicator = create_ui_components(root, None, llm_client, overlay_manager)
 
         error_message = f"❌ Audio Initialization Failed\n\n{str(e)}\n\nPossible causes:\n• Invalid audio device selected\n• Audio device disconnected\n• Sample rate not supported\n\nPlease restart and select different audio devices."
         write_in_textbox(transcript_textbox, error_message)

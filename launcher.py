@@ -13,8 +13,8 @@ class LauncherApp:
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
 
-        self.root.title("AI Interview Copilot Launcher")
-        self.root.geometry("800x750")
+        self.root.title("Ecoute")
+        self.root.geometry("900x850")
 
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
@@ -78,89 +78,233 @@ class LauncherApp:
             messagebox.showerror("Error", f"Failed to scan audio devices: {str(e)}")
 
     def create_ui(self):
-        modern_font = ("Segoe UI", 14)
-        title_font = ("Segoe UI", 24, "bold")
-        header_font = ("Segoe UI", 16, "bold")
+        # Premium typography
+        title_font = ("Segoe UI", 32, "bold")
+        subtitle_font = ("Segoe UI", 15)
+        header_font = ("Segoe UI", 18, "bold")
+        label_font = ("Segoe UI", 14)
+        input_font = ("Segoe UI", 15)
 
-        self.root.configure(fg_color="#111827")
+        # Premium color palette
+        bg_dark = "#0F172A"  # Deep navy background
+        card_bg = "#1E293B"  # Card background
+        input_bg = "#334155"  # Input field background
+        input_border = "#475569"  # Subtle border
+        text_primary = "#F8FAFC"  # Pure white text
+        text_secondary = "#CBD5E1"  # Light grey text
+        text_muted = "#94A3B8"  # Muted grey
+        accent_blue = "#2563EB"  # Vibrant blue
+        accent_blue_hover = "#1D4ED8"  # Darker blue on hover
 
+        self.root.configure(fg_color=bg_dark)
+
+        # Main scrollable container with generous padding
         main_frame = ctk.CTkScrollableFrame(self.root, fg_color="transparent")
-        main_frame.grid(row=0, column=0, sticky="nsew", padx=40, pady=40)
+        main_frame.grid(row=0, column=0, sticky="nsew", padx=60, pady=50)
         main_frame.grid_columnconfigure(0, weight=1)
 
+        # Hero section with title and subtitle
+        hero_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        hero_frame.grid(row=0, column=0, sticky="ew", pady=(0, 40))
+        hero_frame.grid_columnconfigure(0, weight=1)
+
         title_label = ctk.CTkLabel(
-            main_frame,
+            hero_frame,
             text="AI Interview Copilot",
             font=title_font,
-            text_color="#F9FAFB"
+            text_color=text_primary
         )
-        title_label.grid(row=0, column=0, pady=(0, 30), sticky="w")
+        title_label.grid(row=0, column=0, pady=(0, 10))
+
+        subtitle_label = ctk.CTkLabel(
+            hero_frame,
+            text="Your intelligent assistant for live interviews",
+            font=subtitle_font,
+            text_color=text_muted
+        )
+        subtitle_label.grid(row=1, column=0)
 
         # Card 1: Audio Setup
-        audio_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
-        audio_section.grid(row=1, column=0, sticky="ew", pady=(0, 20), ipady=10)
-        audio_section.grid_columnconfigure(1, weight=1)
+        audio_card = ctk.CTkFrame(main_frame, fg_color=card_bg, corner_radius=16)
+        audio_card.grid(row=1, column=0, sticky="ew", pady=(0, 24))
+        audio_card.grid_columnconfigure(1, weight=1)
 
-        audio_title = ctk.CTkLabel(audio_section, text="🎙️ Audio Setup", font=header_font, text_color="#E5E7EB")
-        audio_title.grid(row=0, column=0, columnspan=2, pady=(15, 15), padx=20, sticky="w")
-
-        mic_label = ctk.CTkLabel(audio_section, text="Microphone:", font=modern_font, text_color="#9CA3AF")
-        mic_label.grid(row=1, column=0, padx=20, pady=10, sticky="w")
-        self.mic_dropdown = ctk.CTkComboBox(audio_section, values=["Scanning..."], width=400, font=modern_font, fg_color="#374151", border_width=0, button_color="#4B5563", state="readonly")
-        self.mic_dropdown.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
-
-        speaker_label = ctk.CTkLabel(audio_section, text="Speakers:", font=modern_font, text_color="#9CA3AF")
-        speaker_label.grid(row=2, column=0, padx=20, pady=10, sticky="w")
-        self.speaker_dropdown = ctk.CTkComboBox(audio_section, values=["Scanning..."], width=400, font=modern_font, fg_color="#374151", border_width=0, button_color="#4B5563", state="readonly")
-        self.speaker_dropdown.grid(row=2, column=1, padx=20, pady=(10, 15), sticky="ew")
-
-        # Card 2: API Credentials (Only Groq for transcription)
-        llm_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
-        llm_section.grid(row=2, column=0, sticky="ew", pady=(0, 20), ipady=10)
-        llm_section.grid_columnconfigure(1, weight=1)
-
-        llm_title = ctk.CTkLabel(llm_section, text="🔑 API Credentials", font=header_font, text_color="#E5E7EB")
-        llm_title.grid(row=0, column=0, columnspan=2, pady=(15, 15), padx=20, sticky="w")
-
-        groq_label = ctk.CTkLabel(llm_section, text="Groq API Key (Transcription):", font=modern_font, text_color="#9CA3AF")
-        groq_label.grid(row=1, column=0, padx=20, pady=10, sticky="w")
-        self.groq_api_key_entry = ctk.CTkEntry(llm_section, width=400, show="•", font=modern_font, fg_color="#374151", border_width=0, placeholder_text="gsk_...")
-        existing_groq_key = os.getenv("GROQ_API_KEY", "")
-        if existing_groq_key: self.groq_api_key_entry.insert(0, existing_groq_key)
-        self.groq_api_key_entry.grid(row=1, column=1, padx=20, pady=(10, 15), sticky="ew")
-
-        # Info label about local LM Studio
-        info_label = ctk.CTkLabel(
-            llm_section,
-            text="ℹ️ AI suggestions powered by local LM Studio (http://127.0.0.1:1234)",
-            font=("Segoe UI", 12),
-            text_color="#6B7280"
+        audio_header = ctk.CTkLabel(
+            audio_card,
+            text="🎙️  Audio Configuration",
+            font=header_font,
+            text_color=text_primary,
+            anchor="w"
         )
-        info_label.grid(row=2, column=0, columnspan=2, padx=20, pady=(5, 15), sticky="w")
+        audio_header.grid(row=0, column=0, columnspan=2, padx=30, pady=(25, 20), sticky="w")
+
+        # Microphone section
+        mic_label = ctk.CTkLabel(
+            audio_card,
+            text="Microphone Input",
+            font=label_font,
+            text_color=text_secondary,
+            anchor="w"
+        )
+        mic_label.grid(row=1, column=0, padx=30, pady=(10, 8), sticky="w")
+
+        self.mic_dropdown = ctk.CTkComboBox(
+            audio_card,
+            values=["Scanning devices..."],
+            font=input_font,
+            fg_color=input_bg,
+            border_color=input_border,
+            button_color=input_border,
+            button_hover_color=accent_blue,
+            dropdown_fg_color=card_bg,
+            dropdown_hover_color=input_bg,
+            text_color=text_primary,
+            state="readonly",
+            corner_radius=10,
+            height=45
+        )
+        self.mic_dropdown.grid(row=2, column=0, columnspan=2, padx=30, pady=(0, 20), sticky="ew")
+
+        # Speaker section
+        speaker_label = ctk.CTkLabel(
+            audio_card,
+            text="Speaker Output (for capturing interviewer)",
+            font=label_font,
+            text_color=text_secondary,
+            anchor="w"
+        )
+        speaker_label.grid(row=3, column=0, padx=30, pady=(10, 8), sticky="w")
+
+        self.speaker_dropdown = ctk.CTkComboBox(
+            audio_card,
+            values=["Scanning devices..."],
+            font=input_font,
+            fg_color=input_bg,
+            border_color=input_border,
+            button_color=input_border,
+            button_hover_color=accent_blue,
+            dropdown_fg_color=card_bg,
+            dropdown_hover_color=input_bg,
+            text_color=text_primary,
+            state="readonly",
+            corner_radius=10,
+            height=45
+        )
+        self.speaker_dropdown.grid(row=4, column=0, columnspan=2, padx=30, pady=(0, 25), sticky="ew")
+
+        # Card 2: API Configuration
+        api_card = ctk.CTkFrame(main_frame, fg_color=card_bg, corner_radius=16)
+        api_card.grid(row=2, column=0, sticky="ew", pady=(0, 24))
+        api_card.grid_columnconfigure(1, weight=1)
+
+        api_header = ctk.CTkLabel(
+            api_card,
+            text="🔑  API Configuration",
+            font=header_font,
+            text_color=text_primary,
+            anchor="w"
+        )
+        api_header.grid(row=0, column=0, columnspan=2, padx=30, pady=(25, 20), sticky="w")
+
+        # Groq API Key
+        groq_label = ctk.CTkLabel(
+            api_card,
+            text="Groq API Key (Audio Transcription)",
+            font=label_font,
+            text_color=text_secondary,
+            anchor="w"
+        )
+        groq_label.grid(row=1, column=0, padx=30, pady=(10, 8), sticky="w")
+
+        self.groq_api_key_entry = ctk.CTkEntry(
+            api_card,
+            placeholder_text="gsk_...",
+            font=input_font,
+            fg_color=input_bg,
+            border_color=input_border,
+            text_color=text_primary,
+            placeholder_text_color=text_muted,
+            show="•",
+            corner_radius=10,
+            height=45,
+            border_width=2
+        )
+        existing_groq_key = os.getenv("GROQ_API_KEY", "")
+        if existing_groq_key:
+            self.groq_api_key_entry.insert(0, existing_groq_key)
+        self.groq_api_key_entry.grid(row=2, column=0, columnspan=2, padx=30, pady=(0, 15), sticky="ew")
+
+        # Local LM Studio info banner
+        info_banner = ctk.CTkFrame(api_card, fg_color=input_bg, corner_radius=10)
+        info_banner.grid(row=3, column=0, columnspan=2, padx=30, pady=(5, 25), sticky="ew")
+
+        info_label = ctk.CTkLabel(
+            info_banner,
+            text="ℹ️  AI suggestions powered by local LM Studio server (http://127.0.0.1:1234)",
+            font=("Segoe UI", 13),
+            text_color=text_muted,
+            anchor="w"
+        )
+        info_label.pack(padx=20, pady=15, fill="x")
 
         # Card 3: Interview Context
-        context_section = ctk.CTkFrame(main_frame, fg_color="#1F2937", corner_radius=12)
-        context_section.grid(row=3, column=0, sticky="ew", pady=(0, 30))
-        context_section.grid_columnconfigure(0, weight=1)
+        context_card = ctk.CTkFrame(main_frame, fg_color=card_bg, corner_radius=16)
+        context_card.grid(row=3, column=0, sticky="ew", pady=(0, 30))
+        context_card.grid_columnconfigure(0, weight=1)
 
-        context_title = ctk.CTkLabel(context_section, text="📄 Interview Context (Resume / Job Description)", font=header_font, text_color="#E5E7EB")
-        context_title.grid(row=0, column=0, pady=(15, 10), padx=20, sticky="w")
+        context_header = ctk.CTkLabel(
+            context_card,
+            text="📄  Interview Context",
+            font=header_font,
+            text_color=text_primary,
+            anchor="w"
+        )
+        context_header.grid(row=0, column=0, padx=30, pady=(25, 10), sticky="w")
 
-        self.context_textbox = ctk.CTkTextbox(context_section, height=180, font=("Segoe UI", 13), fg_color="#111827", text_color="#D1D5DB", border_width=1, border_color="#374151", wrap="word")
-        self.context_textbox.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
+        context_subtitle = ctk.CTkLabel(
+            context_card,
+            text="Paste your resume, job description, or any relevant background information",
+            font=("Segoe UI", 13),
+            text_color=text_muted,
+            anchor="w"
+        )
+        context_subtitle.grid(row=1, column=0, padx=30, pady=(0, 15), sticky="w")
+
+        self.context_textbox = ctk.CTkTextbox(
+            context_card,
+            font=("Segoe UI", 14),
+            fg_color=input_bg,
+            text_color=text_secondary,
+            border_width=2,
+            border_color=input_border,
+            corner_radius=10,
+            wrap="word",
+            height=200,
+            spacing1=5,
+            spacing3=5
+        )
+        self.context_textbox.grid(row=2, column=0, padx=30, pady=(0, 25), sticky="ew")
 
         if os.path.exists("temp_context.txt"):
             try:
                 with open("temp_context.txt", "r", encoding="utf-8") as f:
                     self.context_textbox.insert("0.0", f.read())
-            except: pass
+            except:
+                pass
 
-        # Launch Button
+        # Launch button - big, bold, prominent
         self.start_button = ctk.CTkButton(
-            main_frame, text="Launch Copilot", font=("Segoe UI", 16, "bold"), height=50, corner_radius=8,
-            fg_color="#2563EB", hover_color="#1D4ED8", command=self.start_application
+            main_frame,
+            text="Launch Copilot",
+            font=("Segoe UI", 18, "bold"),
+            height=60,
+            corner_radius=12,
+            fg_color=accent_blue,
+            hover_color=accent_blue_hover,
+            text_color=text_primary,
+            command=self.start_application
         )
-        self.start_button.grid(row=4, column=0, pady=(0, 20), sticky="ew")
+        self.start_button.grid(row=4, column=0, pady=(10, 20), sticky="ew")
 
     def start_application(self):
         groq_api_key = self.groq_api_key_entry.get().strip()
@@ -181,7 +325,7 @@ class LauncherApp:
         mic_selection = self.mic_dropdown.get()
         speaker_selection = self.speaker_dropdown.get()
 
-        if mic_selection == "Scanning..." or speaker_selection == "Scanning...":
+        if mic_selection == "Scanning devices..." or speaker_selection == "Scanning devices...":
             messagebox.showerror("Error", "Audio devices are still scanning. Please wait.")
             return
 
@@ -213,15 +357,12 @@ class LauncherApp:
         with open("temp_context.txt", "w", encoding="utf-8") as f:
             f.write(context_text)
 
-        # Destroy launcher window completely to avoid Tkinter conflicts
         self.root.destroy()
 
         try:
-            # Import and run main application directly (PyInstaller compatible)
             import main
             main.main()
         except Exception as e:
-            # Create new temporary root for error message since original is destroyed
             import tkinter as tk
             err_root = tk.Tk()
             err_root.withdraw()
