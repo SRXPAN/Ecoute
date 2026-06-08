@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pause, Play, X, Snowflake } from 'lucide-react';
+import { Pause, Play, X, Snowflake, EyeOff, Eye } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
 interface InterviewViewProps {
   onEndSession: () => void;
@@ -18,11 +19,35 @@ export const InterviewView = ({
   transcript,
   llmHint,
 }: InterviewViewProps) => {
+  const [isStealthEnabled, setIsStealthEnabled] = useState(false);
+  const [stealthStatus, setStealthStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
   const handleFreezeToggle = () => {
     if (isFrozen) {
       onUnfreeze();
     } else {
       onFreeze();
+    }
+  };
+
+  const handleStealthToggle = async () => {
+    const newStealthState = !isStealthEnabled;
+
+    try {
+      const result = await invoke<string>('toggle_stealth', { enable: newStealthState });
+      console.log('[InterviewView] Stealth toggle result:', result);
+
+      setIsStealthEnabled(newStealthState);
+      setStealthStatus('success');
+
+      // Reset status after 2 seconds
+      setTimeout(() => setStealthStatus('idle'), 2000);
+    } catch (error) {
+      console.error('[InterviewView] Stealth toggle failed:', error);
+      setStealthStatus('error');
+
+      // Reset status after 3 seconds
+      setTimeout(() => setStealthStatus('idle'), 3000);
     }
   };
 
@@ -35,12 +60,28 @@ export const InterviewView = ({
           <span className="font-semibold">Interview Active</span>
         </div>
 
-        {isFrozen && (
-          <div className="flex items-center gap-2 text-blue-400">
-            <Snowflake size={16} />
-            <span className="text-sm">Frozen</span>
-          </div>
-        )}
+        <div className="flex items-center gap-4">
+          {isFrozen && (
+            <div className="flex items-center gap-2 text-blue-400">
+              <Snowflake size={16} />
+              <span className="text-sm">Frozen</span>
+            </div>
+          )}
+
+          {/* Stealth Mode Toggle */}
+          <button
+            onClick={handleStealthToggle}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+              isStealthEnabled
+                ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+            } ${stealthStatus === 'error' ? 'ring-2 ring-red-500' : ''}`}
+            title={isStealthEnabled ? 'Stealth Mode: ON (Hidden from screen capture)' : 'Stealth Mode: OFF'}
+          >
+            {isStealthEnabled ? <EyeOff size={16} /> : <Eye size={16} />}
+            <span>Stealth</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Content */}
@@ -52,7 +93,7 @@ export const InterviewView = ({
               Live Transcript
             </h3>
           </div>
-          <div className="text-slate-100 leading-relaxed">
+          <div className="text-slate-100 leading-relaxed whitespace-pre-wrap">
             {transcript || (
               <p className="text-slate-500 italic">Waiting for audio input...</p>
             )}
@@ -67,7 +108,7 @@ export const InterviewView = ({
             </h3>
             <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
           </div>
-          <div className="text-slate-100 leading-relaxed">
+          <div className="text-slate-100 leading-relaxed whitespace-pre-wrap">
             {llmHint || (
               <p className="text-slate-500 italic">AI suggestions will appear here...</p>
             )}
@@ -97,6 +138,19 @@ export const InterviewView = ({
           End Session
         </button>
       </div>
+
+      {/* Stealth Status Notification */}
+      {stealthStatus !== 'idle' && (
+        <div className={`fixed bottom-20 right-6 px-4 py-2 rounded-lg text-sm font-semibold ${
+          stealthStatus === 'success'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-600 text-white'
+        }`}>
+          {stealthStatus === 'success'
+            ? (isStealthEnabled ? 'Stealth Mode Enabled' : 'Stealth Mode Disabled')
+            : 'Stealth Mode Not Supported (Windows only)'}
+        </div>
+      )}
     </div>
   );
 };

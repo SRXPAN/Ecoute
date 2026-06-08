@@ -8,7 +8,7 @@ import os
 import ctypes
 from dotenv import load_dotenv
 from LLMClient import LLMClient
-from StealthOverlay import StealthOverlayManager
+from backend.StealthOverlay import StealthOverlayManager
 import keyboard
 from datetime import datetime
 

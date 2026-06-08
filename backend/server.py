@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import asyncio
@@ -7,6 +7,8 @@ from AudioRecorder import SpeakerRecorder
 from AudioTranscriber import AudioTranscriber
 from LLMClient import LLMClient
 import threading
+import PyPDF2
+import io
 
 
 class ConnectionManager:
@@ -46,6 +48,7 @@ class InterviewSession:
         self.is_running = False
         self.is_frozen = False
         self.worker_tasks = []
+        self.current_context = ""  # Store uploaded context
 
     def initialize(self, transcript_queue, llm_queue):
         """Initialize audio and LLM components"""
@@ -62,7 +65,21 @@ class InterviewSession:
             persona="Short Bullets",
             llm_queue=llm_queue
         )
+
+        # Apply current context if available
+        if self.current_context:
+            self.llm_client.context = self.current_context
+            self.llm_client.system_prompt = self.llm_client._build_system_prompt()
+
         print("[INFO] Interview session initialized")
+
+    def update_context(self, context: str):
+        """Update the context for LLM client"""
+        self.current_context = context
+        if self.llm_client:
+            self.llm_client.context = context
+            self.llm_client.system_prompt = self.llm_client._build_system_prompt()
+            print(f"[INFO] Context updated ({len(context)} characters)")
 
     def start(self):
         """Start audio recording and transcription"""
@@ -212,6 +229,96 @@ async def health_check():
         "interview_running": session.is_running,
         "is_frozen": session.is_frozen
     }
+
+
+@app.post("/api/upload_context")
+async def upload_context(file: UploadFile = File(...)):
+    """
+    Upload a PDF resume/context file and extract text for LLM context.
+
+    Handles:
+    - PDF text extraction using PyPDF2
+    - Graceful error handling for unreadable PDFs
+    - Updates global session context for LLM
+
+    Returns:
+    - success: boolean
+    - message: status message
+    - context_length: character count of extracted text
+    - preview: first 200 characters of extracted text
+    """
+    try:
+        # Validate file type
+        if not file.filename.lower().endswith('.pdf'):
+            return {
+                "success": False,
+                "message": "Only PDF files are supported",
+                "context_length": 0,
+                "preview": ""
+            }
+
+        # Read file contents
+        contents = await file.read()
+
+        # Extract text from PDF
+        try:
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
+            text_parts = []
+
+            for page_num, page in enumerate(pdf_reader.pages):
+                try:
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+                except Exception as e:
+                    print(f"[WARNING] Failed to extract text from page {page_num}: {e}")
+                    continue
+
+            extracted_text = "\n".join(text_parts).strip()
+
+            if not extracted_text:
+                return {
+                    "success": False,
+                    "message": "Could not extract text from PDF. The file might be image-based or encrypted.",
+                    "context_length": 0,
+                    "preview": ""
+                }
+
+            # Update session context
+            session.update_context(extracted_text)
+
+            preview = extracted_text[:200] + "..." if len(extracted_text) > 200 else extracted_text
+
+            return {
+                "success": True,
+                "message": "Context uploaded successfully",
+                "context_length": len(extracted_text),
+                "preview": preview
+            }
+
+        except PyPDF2.errors.PdfReadError as e:
+            return {
+                "success": False,
+                "message": f"Failed to read PDF: {str(e)}",
+                "context_length": 0,
+                "preview": ""
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"PDF processing error: {str(e)}",
+                "context_length": 0,
+                "preview": ""
+            }
+
+    except Exception as e:
+        print(f"[ERROR] Upload context failed: {e}")
+        return {
+            "success": False,
+            "message": f"Server error: {str(e)}",
+            "context_length": 0,
+            "preview": ""
+        }
 
 
 @app.websocket("/ws")
