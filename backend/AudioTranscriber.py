@@ -13,10 +13,11 @@ MAX_PHRASE_DURATION = 8.0
 RMS_THRESHOLD = 30
 
 class AudioTranscriber:
-    def __init__(self, speaker_recorder, mic_recorder=None, transcript_queue=None):
+    def __init__(self, speaker_recorder, mic_recorder=None, transcript_queue=None, loop=None):
         self.speaker_recorder = speaker_recorder
         self.mic_recorder = mic_recorder
         self.transcript_queue = transcript_queue  # asyncio.Queue for output
+        self.loop = loop
 
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -148,23 +149,24 @@ class AudioTranscriber:
             )
 
             text = transcription.strip()
-            hallucinations = ["you", "thank you", "thanks", "you.", "thanks.", "thank you.", "subtitles by"]
+            hallucinations = [
+                "you", "thank you", "thanks", "you.", "thanks.", "thank you.", "subtitles by",
+                "субтитры сделал dimatorzok", "субтитры сделал", "dimatorzok", "перевод и озвучка"
+            ]
             if text and len(text) > 3 and not any(h in text.lower() for h in hallucinations):
                 self.transcript_data[source_name].appendleft((f"{source_name}: [{text}]\n\n", timestamp))
                 print(f"[TRANSCRIPTION] {source_name}: {text}")
 
-                if self.transcript_queue:
+                if self.transcript_queue and self.loop:
                     try:
-                        import asyncio
-                        loop = asyncio.get_event_loop()
-                        asyncio.run_coroutine_threadsafe(
-                            self.transcript_queue.put({
+                        self.loop.call_soon_threadsafe(
+                            self.transcript_queue.put_nowait,
+                            {
                                 "type": "transcript",
                                 "speaker": source_name,
                                 "text": text,
                                 "timestamp": timestamp.isoformat()
-                            }),
-                            loop
+                            }
                         )
                     except Exception as e:
                         print(f"[WARNING] Failed to push transcript to queue: {e}")

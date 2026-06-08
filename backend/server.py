@@ -47,14 +47,16 @@ class InterviewSession:
         self.llm_client = None
         self.transcript_queue = None
         self.llm_queue = None
+        self.loop = None
         self.is_running = False
         self.is_frozen = False
         self.worker_tasks = []
 
-    def initialize(self, transcript_queue, llm_queue, mic_index=None, speaker_index=None, persona="Short Bullets", context=""):
+    def initialize(self, transcript_queue, llm_queue, loop, mic_index=None, speaker_index=None, persona="Short Bullets", context=""):
         """Initialize audio and LLM components with user configuration"""
         self.transcript_queue = transcript_queue
         self.llm_queue = llm_queue
+        self.loop = loop
 
         # Initialize audio recorders with user-selected devices
         self.speaker_recorder = SpeakerRecorder(device_index=speaker_index)
@@ -63,13 +65,15 @@ class InterviewSession:
         self.transcriber = AudioTranscriber(
             speaker_recorder=self.speaker_recorder,
             mic_recorder=self.mic_recorder,
-            transcript_queue=transcript_queue
+            transcript_queue=transcript_queue,
+            loop=loop
         )
 
         self.llm_client = LLMClient(
             provider="local",
             persona=persona,
-            llm_queue=llm_queue
+            llm_queue=llm_queue,
+            loop=loop
         )
 
         # Apply user context
@@ -400,9 +404,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 if not session.is_running:
                     # Initialize session with user configuration
+                    loop = asyncio.get_running_loop()
                     session.initialize(
                         transcript_queue=session.transcript_queue,
                         llm_queue=session.llm_queue,
+                        loop=loop,
                         mic_index=mic_index,
                         speaker_index=speaker_index,
                         persona=persona,

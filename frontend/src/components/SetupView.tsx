@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Mic, User, Rocket, Upload, CheckCircle, AlertCircle, Speakers } from 'lucide-react';
+import { Settings, Mic, User, Rocket, Upload, CheckCircle, AlertCircle, Speaker } from 'lucide-react';
 
 interface SetupViewProps {
   onStartInterview: (config: InterviewConfig) => void;
@@ -182,7 +182,7 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
 
       <div>
         <h3 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
-          <Speakers size={20} className="text-purple-400" />
+          <Speaker size={20} className="text-purple-400" />
           Speaker Loopback (System Audio)
         </h3>
         {audioDevicesLoading ? (

@@ -13,10 +13,11 @@ class LLMClient:
     GUI-independent version with queue support.
     """
 
-    def __init__(self, provider: str = "local", persona: str = "Short Bullets", llm_queue=None):
+    def __init__(self, provider: str = "local", persona: str = "Short Bullets", llm_queue=None, loop=None):
         self.provider = provider.lower()
         self.persona = persona
         self.llm_queue = llm_queue  # asyncio.Queue for streaming output
+        self.loop = loop
         self.model_name = 'local-model'
         self.context = self._load_interview_context()
         self.system_prompt = self._build_system_prompt()
@@ -94,16 +95,14 @@ Keep it highly concise so the user can read it at a glance. ALWAYS respond in th
                     full_response += token
 
                     # Push to async queue if available
-                    if self.llm_queue:
+                    if self.llm_queue and self.loop:
                         try:
-                            import asyncio
-                            loop = asyncio.get_event_loop()
-                            asyncio.run_coroutine_threadsafe(
-                                self.llm_queue.put({
+                            self.loop.call_soon_threadsafe(
+                                self.llm_queue.put_nowait,
+                                {
                                     "type": "llm_token",
                                     "token": token
-                                }),
-                                loop
+                                }
                             )
                         except Exception as e:
                             print(f"[WARNING] Failed to push LLM token to queue: {e}")
