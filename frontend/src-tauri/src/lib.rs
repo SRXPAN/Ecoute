@@ -24,7 +24,7 @@ fn toggle_stealth(window: tauri::Window, enable: bool) -> Result<String, String>
 
         // Get the native window handle
         let hwnd = window.hwnd().map_err(|e| format!("Failed to get window handle: {}", e))?;
-        let hwnd = HWND(hwnd.0 as isize);
+        let hwnd = HWND(hwnd.0 as *mut std::ffi::c_void);
 
         // Set the display affinity based on enable flag
         let affinity = if enable {
