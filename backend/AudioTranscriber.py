@@ -13,8 +13,9 @@ MAX_PHRASE_DURATION = 8.0
 RMS_THRESHOLD = 30
 
 class AudioTranscriber:
-    def __init__(self, speaker_recorder, transcript_queue=None):
+    def __init__(self, speaker_recorder, mic_recorder=None, transcript_queue=None):
         self.speaker_recorder = speaker_recorder
+        self.mic_recorder = mic_recorder
         self.transcript_queue = transcript_queue  # asyncio.Queue for output
 
         api_key = os.getenv("GROQ_API_KEY")
@@ -24,31 +25,44 @@ class AudioTranscriber:
         self.groq_client = Groq(api_key=api_key)
 
         self.transcript_data = {
-            "Speaker": deque(maxlen=MAX_PHRASES)
+            "Interviewer": deque(maxlen=MAX_PHRASES),
+            "Me": deque(maxlen=MAX_PHRASES)
         }
 
         self.audio_buffers = {
-            "Speaker": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False}
+            "Interviewer": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False},
+            "Me": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False}
         }
 
-        self.current_status = {"Speaker": "🟢 Idle"}
+        self.current_status = {
+            "Interviewer": "🟢 Idle",
+            "Me": "🟢 Idle"
+        }
 
         self.is_running = False
         self.is_paused = False
-        print("[INFO] Groq-based audio transcriber initialized with Smart VAD (Speaker only)")
+        print(f"[INFO] Groq-based audio transcriber initialized (Speaker + {'Mic' if mic_recorder else 'No Mic'})")
 
     def start(self):
         if self.is_running: return
         self.is_running = True
+        
+        # Start recorders
         self.speaker_recorder.start_recording()
+        if self.mic_recorder:
+            self.mic_recorder.start_recording()
 
-        self.speaker_thread = threading.Thread(target=self._transcribe_loop, args=("Speaker",), daemon=True)
-
+        # Start transcription threads
+        self.speaker_thread = threading.Thread(target=self._transcribe_loop, args=("Interviewer", self.speaker_recorder), daemon=True)
         self.speaker_thread.start()
-        print("[INFO] Transcription started (Speaker only)")
+        
+        if self.mic_recorder:
+            self.mic_thread = threading.Thread(target=self._transcribe_loop, args=("Me", self.mic_recorder), daemon=True)
+            self.mic_thread.start()
+            
+        print(f"[INFO] Transcription started for: Interviewer{' & Me' if self.mic_recorder else ''}")
 
-    def _transcribe_loop(self, source_name):
-        recorder = self.speaker_recorder
+    def _transcribe_loop(self, source_name, recorder):
         buffer_info = self.audio_buffers[source_name]
 
         while self.is_running:
@@ -56,16 +70,12 @@ class AudioTranscriber:
                 # If paused, aggressively clear buffers and skip processing
                 if self.is_paused:
                     audio_chunk = recorder.get_audio_chunk(timeout=0.1)
-                    # Throw away audio data while paused
                     if audio_chunk:
-                        pass  # Discard the chunk
-
-                    # Clear any accumulated buffer
+                        pass  # Discard
                     if buffer_info["data"]:
                         buffer_info["data"] = b""
                         buffer_info["last_audio_time"] = None
                         buffer_info["start_time"] = None
-
                     time.sleep(0.1)
                     continue
 
@@ -92,12 +102,11 @@ class AudioTranscriber:
 
                 if buffer_info["data"] and buffer_info["last_audio_time"]:
                     time_since_last_audio = (datetime.utcnow() - buffer_info["last_audio_time"]).total_seconds()
-
                     start_t = buffer_info["start_time"] if buffer_info["start_time"] else buffer_info["last_audio_time"]
                     duration = (datetime.utcnow() - start_t).total_seconds()
 
                     if (time_since_last_audio >= PHRASE_TIMEOUT or duration >= MAX_PHRASE_DURATION) and not buffer_info["is_processing"]:
-                        self._process_audio_buffer(source_name)
+                        self._process_audio_buffer(source_name, recorder)
 
                 time.sleep(0.02)
 
@@ -106,7 +115,7 @@ class AudioTranscriber:
                 self.current_status[source_name] = "🔴 Error"
                 time.sleep(0.5)
 
-    def _process_audio_buffer(self, source_name):
+    def _process_audio_buffer(self, source_name, recorder):
         buffer_info = self.audio_buffers[source_name]
         if not buffer_info["data"]: return
 
@@ -121,17 +130,15 @@ class AudioTranscriber:
 
         threading.Thread(
             target=self._transcribe_with_groq,
-            args=(source_name, audio_data, timestamp),
+            args=(source_name, audio_data, timestamp, recorder),
             daemon=True
         ).start()
 
         buffer_info["is_processing"] = False
 
-    def _transcribe_with_groq(self, source_name, audio_data, timestamp):
+    def _transcribe_with_groq(self, source_name, audio_data, timestamp, recorder):
         try:
             self.current_status[source_name] = "⏳ Groq API"
-
-            recorder = self.speaker_recorder
             wav_bytes = recorder.create_wav_bytes(audio_data)
 
             transcription = self.groq_client.audio.transcriptions.create(
@@ -146,14 +153,14 @@ class AudioTranscriber:
                 self.transcript_data[source_name].appendleft((f"{source_name}: [{text}]\n\n", timestamp))
                 print(f"[TRANSCRIPTION] {source_name}: {text}")
 
-                # Push to async queue if available
                 if self.transcript_queue:
                     try:
+                        import asyncio
                         loop = asyncio.get_event_loop()
                         asyncio.run_coroutine_threadsafe(
                             self.transcript_queue.put({
                                 "type": "transcript",
-                                "speaker": "interviewer",
+                                "speaker": source_name,
                                 "text": text,
                                 "timestamp": timestamp.isoformat()
                             }),
@@ -167,26 +174,37 @@ class AudioTranscriber:
         except Exception as e:
             print(f"[ERROR] Groq transcription failed for {source_name}: {e}")
             self.current_status[source_name] = "🔴 Error"
-            time.sleep(2)  # Чекаємо 2 сек перед поверненням до Idle
+            time.sleep(2)
             self.current_status[source_name] = "🟢 Idle"
 
     def get_transcript(self):
         combined = []
-        for text, timestamp in self.transcript_data["Speaker"]:
-            combined.append((text, timestamp))
+        for source in ["Interviewer", "Me"]:
+            for text, timestamp in self.transcript_data[source]:
+                combined.append((text, timestamp))
         combined.sort(key=lambda x: x[1], reverse=True)
         return "".join([text for text, _ in combined[:MAX_PHRASES]])
 
     def get_latest_speaker_text(self):
-        if self.transcript_data["Speaker"]:
-            latest_text, _ = self.transcript_data["Speaker"][0]
-            return latest_text.replace("Speaker: [", "").replace("]\n\n", "").strip()
-        return ""
+        # We prefer Interviewer text for LLM hints usually, but let's just return the absolute latest
+        all_text = []
+        for source in ["Interviewer", "Me"]:
+            if self.transcript_data[source]:
+                text, timestamp = self.transcript_data[source][0]
+                all_text.append((text, timestamp))
+        
+        if not all_text:
+            return ""
+            
+        all_text.sort(key=lambda x: x[1], reverse=True)
+        latest_text, _ = all_text[0]
+        # Clean up tags
+        return latest_text.split(": [")[-1].replace("]\n\n", "").strip()
 
     def get_statuses(self):
         if self.is_paused:
             return "⏸️ PAUSED"
-        return self.current_status['Speaker']
+        return f"Int: {self.current_status['Interviewer']} | Me: {self.current_status['Me']}"
 
     def toggle_pause(self) -> bool:
         """Toggle pause state and return new state"""
@@ -198,18 +216,22 @@ class AudioTranscriber:
         return self.is_paused
 
     def clear_transcript_data(self):
-        self.transcript_data["Speaker"].clear()
-        self.audio_buffers["Speaker"]["data"] = b""
-        self.audio_buffers["Speaker"]["last_audio_time"] = None
-        self.audio_buffers["Speaker"]["start_time"] = None
+        for source in ["Interviewer", "Me"]:
+            self.transcript_data[source].clear()
+            self.audio_buffers[source]["data"] = b""
+            self.audio_buffers[source]["last_audio_time"] = None
+            self.audio_buffers[source]["start_time"] = None
         print("[INFO] Transcript data cleared")
 
     def stop(self):
         self.is_running = False
         self.speaker_recorder.stop_recording()
+        if self.mic_recorder:
+            self.mic_recorder.stop_recording()
         print("[INFO] Transcription stopped")
 
     def close(self):
         self.stop()
         self.speaker_recorder.close()
-
+        if self.mic_recorder:
+            self.mic_recorder.close()

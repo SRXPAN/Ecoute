@@ -2,13 +2,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import asyncio
-from typing import List
-from AudioRecorder import SpeakerRecorder
+from typing import List, Dict
+from AudioRecorder import SpeakerRecorder, MicRecorder
 from AudioTranscriber import AudioTranscriber
 from LLMClient import LLMClient
 import threading
 import PyPDF2
 import io
+import pyaudiowpatch as pyaudio
 
 
 class ConnectionManager:
@@ -41,6 +42,7 @@ class ConnectionManager:
 class InterviewSession:
     def __init__(self):
         self.speaker_recorder = None
+        self.mic_recorder = None
         self.transcriber = None
         self.llm_client = None
         self.transcript_queue = None
@@ -48,38 +50,35 @@ class InterviewSession:
         self.is_running = False
         self.is_frozen = False
         self.worker_tasks = []
-        self.current_context = ""  # Store uploaded context
 
-    def initialize(self, transcript_queue, llm_queue):
-        """Initialize audio and LLM components"""
+    def initialize(self, transcript_queue, llm_queue, mic_index=None, speaker_index=None, persona="Short Bullets", context=""):
+        """Initialize audio and LLM components with user configuration"""
         self.transcript_queue = transcript_queue
         self.llm_queue = llm_queue
 
-        self.speaker_recorder = SpeakerRecorder()
+        # Initialize audio recorders with user-selected devices
+        self.speaker_recorder = SpeakerRecorder(device_index=speaker_index)
+        self.mic_recorder = MicRecorder(device_index=mic_index) if mic_index is not None else None
+
         self.transcriber = AudioTranscriber(
             speaker_recorder=self.speaker_recorder,
+            mic_recorder=self.mic_recorder,
             transcript_queue=transcript_queue
         )
+
         self.llm_client = LLMClient(
             provider="local",
-            persona="Short Bullets",
+            persona=persona,
             llm_queue=llm_queue
         )
 
-        # Apply current context if available
-        if self.current_context:
-            self.llm_client.context = self.current_context
-            self.llm_client.system_prompt = self.llm_client._build_system_prompt()
-
-        print("[INFO] Interview session initialized")
-
-    def update_context(self, context: str):
-        """Update the context for LLM client"""
-        self.current_context = context
-        if self.llm_client:
+        # Apply user context
+        if context:
             self.llm_client.context = context
             self.llm_client.system_prompt = self.llm_client._build_system_prompt()
-            print(f"[INFO] Context updated ({len(context)} characters)")
+
+        print(f"[INFO] Interview session initialized (Persona: {persona}, Context: {len(context)} chars)")
+
 
     def start(self):
         """Start audio recording and transcription"""
@@ -205,7 +204,9 @@ async def startup_event():
     transcript_queue = asyncio.Queue()
     llm_queue = asyncio.Queue()
 
-    session.initialize(transcript_queue, llm_queue)
+    # Store queues for later initialization
+    session.transcript_queue = transcript_queue
+    session.llm_queue = llm_queue
 
     asyncio.create_task(transcript_worker(transcript_queue))
     asyncio.create_task(llm_worker(llm_queue))
@@ -231,21 +232,76 @@ async def health_check():
     }
 
 
+@app.get("/api/audio-devices")
+async def get_audio_devices():
+    """
+    Scan and return available audio input and output devices.
+
+    Returns:
+    - microphones: List of standard input devices
+    - speakers: List of WASAPI loopback devices (for system audio capture)
+    """
+    try:
+        p = pyaudio.PyAudio()
+
+        microphones = []
+        speakers = []
+
+        # Scan all devices
+        for i in range(p.get_device_count()):
+            try:
+                device_info = p.get_device_info_by_index(i)
+
+                # Check if it's an input device (microphone)
+                if device_info.get("maxInputChannels", 0) > 0:
+                    # Check if it's a loopback device (speaker capture)
+                    if device_info.get("isLoopbackDevice", False):
+                        speakers.append({
+                            "index": i,
+                            "name": device_info["name"],
+                            "channels": device_info["maxInputChannels"],
+                            "sample_rate": int(device_info["defaultSampleRate"])
+                        })
+                    else:
+                        microphones.append({
+                            "index": i,
+                            "name": device_info["name"],
+                            "channels": device_info["maxInputChannels"],
+                            "sample_rate": int(device_info["defaultSampleRate"])
+                        })
+            except Exception as e:
+                print(f"[WARNING] Failed to get info for device {i}: {e}")
+                continue
+
+        p.terminate()
+
+        return {
+            "success": True,
+            "microphones": microphones,
+            "speakers": speakers
+        }
+
+    except Exception as e:
+        print(f"[ERROR] Failed to scan audio devices: {e}")
+        return {
+            "success": False,
+            "microphones": [],
+            "speakers": [],
+            "error": str(e)
+        }
+
+
 @app.post("/api/upload_context")
 async def upload_context(file: UploadFile = File(...)):
     """
-    Upload a PDF resume/context file and extract text for LLM context.
+    Upload a PDF resume/context file and extract text.
 
-    Handles:
-    - PDF text extraction using PyPDF2
-    - Graceful error handling for unreadable PDFs
-    - Updates global session context for LLM
+    Frontend manages state - this endpoint only parses and returns extracted text.
 
     Returns:
     - success: boolean
     - message: status message
-    - context_length: character count of extracted text
-    - preview: first 200 characters of extracted text
+    - extracted_text: full extracted text from PDF
     """
     try:
         # Validate file type
@@ -253,8 +309,7 @@ async def upload_context(file: UploadFile = File(...)):
             return {
                 "success": False,
                 "message": "Only PDF files are supported",
-                "context_length": 0,
-                "preview": ""
+                "extracted_text": ""
             }
 
         # Read file contents
@@ -280,35 +335,26 @@ async def upload_context(file: UploadFile = File(...)):
                 return {
                     "success": False,
                     "message": "Could not extract text from PDF. The file might be image-based or encrypted.",
-                    "context_length": 0,
-                    "preview": ""
+                    "extracted_text": ""
                 }
-
-            # Update session context
-            session.update_context(extracted_text)
-
-            preview = extracted_text[:200] + "..." if len(extracted_text) > 200 else extracted_text
 
             return {
                 "success": True,
-                "message": "Context uploaded successfully",
-                "context_length": len(extracted_text),
-                "preview": preview
+                "message": "PDF parsed successfully",
+                "extracted_text": extracted_text
             }
 
         except PyPDF2.errors.PdfReadError as e:
             return {
                 "success": False,
                 "message": f"Failed to read PDF: {str(e)}",
-                "context_length": 0,
-                "preview": ""
+                "extracted_text": ""
             }
         except Exception as e:
             return {
                 "success": False,
                 "message": f"PDF processing error: {str(e)}",
-                "context_length": 0,
-                "preview": ""
+                "extracted_text": ""
             }
 
     except Exception as e:
@@ -316,8 +362,7 @@ async def upload_context(file: UploadFile = File(...)):
         return {
             "success": False,
             "message": f"Server error: {str(e)}",
-            "context_length": 0,
-            "preview": ""
+            "extracted_text": ""
         }
 
 
@@ -337,7 +382,32 @@ async def websocket_endpoint(websocket: WebSocket):
             action = data.get("action")
 
             if action == "start_interview":
+                # Handle both flat and nested (config) payloads
+                mic_index = data.get("mic_index")
+                speaker_index = data.get("speaker_index")
+                persona = data.get("persona")
+                context = data.get("context")
+
+                if mic_index is None and "config" in data:
+                    cfg = data.get("config", {})
+                    mic_index = cfg.get("mic_index")
+                    speaker_index = cfg.get("speaker_index")
+                    persona = cfg.get("persona")
+                    context = cfg.get("context")
+
+                persona = persona or "Short Bullets"
+                context = context or ""
+
                 if not session.is_running:
+                    # Initialize session with user configuration
+                    session.initialize(
+                        transcript_queue=session.transcript_queue,
+                        llm_queue=session.llm_queue,
+                        mic_index=mic_index,
+                        speaker_index=speaker_index,
+                        persona=persona,
+                        context=context
+                    )
                     session.start()
                     await manager.send_json(websocket, {
                         "type": "response",

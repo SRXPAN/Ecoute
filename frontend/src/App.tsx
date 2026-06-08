@@ -76,9 +76,15 @@ function App() {
 
   const { connectionStatus, sendMessage } = useWebSocket(handleWebSocketMessage);
 
-  const handleStartInterview = () => {
-    console.log('[App] Starting interview...');
-    sendMessage({ action: 'start_interview' });
+  const handleStartInterview = (config: any) => {
+    console.log('[App] Starting interview with config:', config);
+    sendMessage({
+      action: 'start_interview',
+      mic_index: config.mic_index,
+      speaker_index: config.speaker_index,
+      persona: config.persona,
+      context: config.context
+    });
     setIsInterviewActive(true);
     setTranscript('');
     setLlmHint('');
