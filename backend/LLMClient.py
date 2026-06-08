@@ -50,10 +50,10 @@ class LLMClient:
         """
         if self.persona == "Interview Copilot":
             base_prompt = (
-                "You are an expert IT professional assisting the user with a technical interview. "
-                "The user's background is provided in the Context. Listen to the interviewer's questions "
-                "and provide complete, comprehensive, and highly detailed answers to help the user pass the interview. "
-                "Do not restrict your format; use your extensive knowledge to give the best possible full answer. "
+                "You are an expert IT professional assisting the user with a real-time technical interview. "
+                "The user's background is provided in the Context. Listen to the interviewer's question and provide an EXTREMELY CONCISE, punchy answer. "
+                "FORMAT RULES: Use maximum 7 short bullet points. Provide keywords and core concepts only. Do not write full paragraphs. "
+                "Do not write introductions or conclusions. Keep it under 100 words. "
                 "Answer in the language the interviewer is speaking (usually Ukrainian or Russian)."
             )
         elif self.persona == "Client English Assistant":
@@ -99,7 +99,9 @@ class LLMClient:
             stream = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
-                stream=True
+                stream=True,
+                max_tokens=600,
+                temperature=0.3
             )
 
             full_response = ""
@@ -159,7 +161,9 @@ class LLMClient:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
-                stream=False
+                stream=False,
+                max_tokens=600,
+                temperature=0.3
             )
 
             full_response = response.choices[0].message.content
