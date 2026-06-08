@@ -208,15 +208,24 @@ export const InterviewView = ({
         </div>
 
         {/* AI Hints Section */}
-        <div className="flex-1 bg-linear-to-br from-blue-900/20 to-purple-900/20 rounded-lg border border-blue-700/30 p-4 overflow-y-auto">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-blue-300 text-sm uppercase tracking-wide">
-              AI Suggestions
-            </h3>
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+        <div className="flex-1 rounded-xl border border-indigo-500/40 bg-slate-800 p-4 shadow-lg shadow-indigo-950/20 overflow-y-auto">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-300">
+                Current Active Hint
+              </h3>
+              <div className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></div>
+            </div>
+            {isFrozen && (
+              <span className="inline-flex items-center rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-sky-200">
+                ❄️ Frozen
+              </span>
+            )}
           </div>
-          <div className="text-slate-100 leading-relaxed whitespace-pre-wrap">
-            {llmHint || (
+          <div className="text-slate-100 leading-relaxed whitespace-pre-wrap rounded-lg bg-slate-900/60 border border-slate-700/60 p-3">
+            {llmHint ? (
+              <span>{llmHint}</span>
+            ) : (
               <p className="text-slate-500 italic">AI suggestions will appear here...</p>
             )}
           </div>

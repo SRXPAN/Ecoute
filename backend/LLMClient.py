@@ -22,7 +22,7 @@ class LLMClient:
         self.context = self._load_interview_context()
         self.system_prompt = self._build_system_prompt()
         self.history = []
-        self.max_history_messages = 6
+        self.max_history_messages = 10
 
         self.client = OpenAI(
             base_url="http://127.0.0.1:1234/v1",
@@ -48,27 +48,50 @@ class LLMClient:
         """
         Dynamically builds the system prompt based on the selected AI persona.
         """
-        if self.persona == "Technical Deep Dive":
-            base_prompt = "You are a real-time technical interview assistant. Based on the user's context, answer the interviewer's question by focusing strictly on software architecture, specific tech stacks, tools, and SDLC methodologies. Use professional engineering terminology. Max 3 bullet points. ALWAYS respond in the EXACT SAME language as the interviewer's question."
-        elif self.persona == "STAR Method":
-            base_prompt = "You are an interview coach. Answer the interviewer's question strictly using the STAR format (Situation, Task, Action, Result) based on the user's context. Keep it highly concise and conversational. Max 4 short sentences. ALWAYS respond in the EXACT SAME language as the interviewer's question."
-        elif self.persona == "Coach Advice":
-            base_prompt = """You are an expert interview coach. The user is in a live interview.
-Do NOT answer in the first person ("I did X").
-Instead, give the user direct instructions on HOW they should answer the question based on their context.
-Format your response exactly like this:
-"Як відповідати: [Give a dense, practical strategy in 2-3 sentences. Mention specific frameworks, time-blocking, or prioritization techniques they should talk about.]"
-Keep it highly concise so the user can read it at a glance. ALWAYS respond in the EXACT SAME language as the interviewer's question."""
-        else:  # Default / Short Bullets
-            base_prompt = "You are a real-time interview assistant. Based ONLY on the user's context, provide a maximum of 3 highly concise bullet points (max 10 words each) to answer the interviewer's question. ALWAYS respond in the EXACT SAME language as the interviewer's question."
+        universal_instruction = (
+            "Never apologize or refuse to answer. If a question is conversational or non-technical "
+            "(e.g., 'tell me about yourself' or 'why did you change careers'), answer it naturally "
+            "based on the user's resume context. Do not block non-technical questions."
+        )
+
+        if self.persona == "Interview Copilot":
+            base_prompt = (
+                "You are an expert IT professional assisting the user with a technical interview. "
+                "The user's background is provided in the Context. Listen to the interviewer's questions "
+                "and provide complete, comprehensive, and highly detailed answers to help the user pass the interview. "
+                "Do not restrict your format; use your extensive knowledge to give the best possible full answer. "
+                "Answer in the language the interviewer is speaking (usually Ukrainian or Russian)."
+            )
+        elif self.persona == "Client English Assistant":
+            base_prompt = (
+                "You are a real-time English translator and Project Management assistant. The user is on a call "
+                "with an English-speaking client, but the user does not speak English well. The current project tasks "
+                "and context are provided below. When the client speaks, briefly summarize what they want in Ukrainian or Russian. "
+                "Then, provide the EXACT professional English phrases the user should read out loud to reply, manage the task, or guide the conversation. "
+                "Format: [Суть питання] -> [Your English Reply]."
+            )
+        else:
+            base_prompt = (
+                "You are a real-time interview or client-call assistant. Use the user's context to help them respond clearly, "
+                "professionally, and naturally in the language of the conversation."
+            )
 
         context_str = self.context if self.context else "[No context provided]"
-        return f"{base_prompt}\n\nCONTEXT (User's Background):\n{context_str}"
+        return f"{base_prompt}\n\n{universal_instruction}\n\nCONTEXT (User's Background):\n{context_str}"
 
     def _trim_history(self):
-        """Keep only the most recent messages to prevent token overflow"""
+        """Keep only the most recent conversation messages to prevent token overflow."""
         if len(self.history) > self.max_history_messages:
             self.history = self.history[-self.max_history_messages:]
+
+    def _build_messages(self, interviewer_question: str):
+        """Always include the system prompt and only the last 10 history messages."""
+        recent_history = self.history[-self.max_history_messages:]
+        return [
+            {'role': 'system', 'content': self.system_prompt}
+        ] + recent_history + [
+            {'role': 'user', 'content': interviewer_question}
+        ]
 
     def get_suggestion(self, interviewer_question: str) -> Generator[str, None, None]:
         """Stream AI suggestions token by token"""
@@ -76,11 +99,8 @@ Keep it highly concise so the user can read it at a glance. ALWAYS respond in th
             return
 
         try:
-            messages = [
-                {'role': 'system', 'content': self.system_prompt}
-            ] + self.history + [
-                {'role': 'user', 'content': interviewer_question}
-            ]
+            clear_sent = False
+            messages = self._build_messages(interviewer_question)
 
             stream = self.client.chat.completions.create(
                 model=self.model_name,
@@ -92,6 +112,21 @@ Keep it highly concise so the user can read it at a glance. ALWAYS respond in th
             for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
                     token = chunk.choices[0].delta.content
+
+                    if not clear_sent and self.llm_queue and self.loop:
+                        try:
+                            self.loop.call_soon_threadsafe(
+                                self.llm_queue.put_nowait,
+                                {
+                                    "type": "llm_hint",
+                                    "text": "",
+                                    "clear": True
+                                }
+                            )
+                            clear_sent = True
+                        except Exception as e:
+                            print(f"[WARNING] Failed to push LLM clear signal to queue: {e}")
+
                     full_response += token
 
                     # Push to async queue if available
@@ -125,11 +160,7 @@ Keep it highly concise so the user can read it at a glance. ALWAYS respond in th
             return ""
 
         try:
-            messages = [
-                {'role': 'system', 'content': self.system_prompt}
-            ] + self.history + [
-                {'role': 'user', 'content': interviewer_question}
-            ]
+            messages = self._build_messages(interviewer_question)
 
             response = self.client.chat.completions.create(
                 model=self.model_name,

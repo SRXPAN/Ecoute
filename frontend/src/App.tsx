@@ -57,7 +57,9 @@ function App() {
         break;
 
       case 'llm_hint':
-        if (message.is_streaming) {
+        if (message.clear) {
+          setLlmHint('');
+        } else if (message.is_streaming) {
           setLlmHint((prev) => prev + message.text);
         } else if (message.complete) {
           // Optionally clear or mark completion

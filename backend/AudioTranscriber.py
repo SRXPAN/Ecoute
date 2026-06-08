@@ -3,6 +3,7 @@ import time
 import os
 from datetime import datetime
 import numpy as np
+import keyboard
 from groq import Groq
 from collections import deque
 import asyncio
@@ -11,6 +12,7 @@ PHRASE_TIMEOUT = 1.0
 MAX_PHRASES = 10
 MAX_PHRASE_DURATION = 8.0
 RMS_THRESHOLD = 30
+MIC_SILENCE_THRESHOLD = 500
 
 class AudioTranscriber:
     def __init__(self, speaker_recorder, mic_recorder=None, transcript_queue=None, loop=None):
@@ -43,6 +45,26 @@ class AudioTranscriber:
         self.is_running = False
         self.is_paused = False
         print(f"[INFO] Groq-based audio transcriber initialized (Speaker + {'Mic' if mic_recorder else 'No Mic'})")
+
+    def _is_push_to_talk_active(self) -> bool:
+        """Require Ctrl + Alt to be held before we process microphone audio."""
+        try:
+            return keyboard.is_pressed("ctrl") and keyboard.is_pressed("alt")
+        except Exception:
+            # If the keyboard hook is unavailable, fail closed so we do not
+            # transcribe background noise or accidental keystrokes.
+            return False
+
+    def _calculate_rms(self, audio_data: bytes) -> float:
+        """Compute RMS volume for an int16 PCM audio buffer."""
+        if not audio_data:
+            return 0.0
+
+        audio_np = np.frombuffer(audio_data, dtype=np.int16)
+        if audio_np.size == 0:
+            return 0.0
+
+        return float(np.sqrt(np.mean(audio_np.astype(np.float32) ** 2)))
 
     def start(self):
         if self.is_running: return
@@ -85,8 +107,26 @@ class AudioTranscriber:
                 if audio_chunk:
                     audio_data, timestamp = audio_chunk
 
-                    audio_np = np.frombuffer(audio_data, dtype=np.int16)
-                    rms = np.sqrt(np.mean(audio_np.astype(np.float32)**2))
+                    # Push-to-talk only applies to the microphone. If the user is
+                    # not holding Ctrl + Alt, discard the audio immediately.
+                    if source_name == "Me" and not self._is_push_to_talk_active():
+                        if buffer_info["data"]:
+                            buffer_info["data"] = b""
+                            buffer_info["last_audio_time"] = None
+                            buffer_info["start_time"] = None
+                        self.current_status[source_name] = "🟢 Idle"
+                        time.sleep(0.02)
+                        continue
+
+                    rms = self._calculate_rms(audio_data)
+
+                    # For microphone input, ignore quiet buffers that are likely
+                    # silence or background noise. This prevents Whisper from
+                    # hallucinating and reduces wasted API usage.
+                    if source_name == "Me" and rms < MIC_SILENCE_THRESHOLD:
+                        if not buffer_info["is_processing"] and not buffer_info["data"]:
+                            self.current_status[source_name] = "🟢 Idle"
+                        continue
 
                     if rms > RMS_THRESHOLD:
                         self.current_status[source_name] = "🎙️ Recording"
@@ -128,6 +168,16 @@ class AudioTranscriber:
         start_time = buffer_info["start_time"] or timestamp
         buffer_duration = max((timestamp - start_time).total_seconds(), 0.01) if timestamp and start_time else 0.01
 
+        # Guard the Groq request with a final RMS check for microphone audio.
+        # This is the last cheap filter before transcription.
+        if source_name == "Me" and self._calculate_rms(audio_data) < MIC_SILENCE_THRESHOLD:
+            buffer_info["data"] = b""
+            buffer_info["start_time"] = None
+            buffer_info["last_audio_time"] = None
+            buffer_info["is_processing"] = False
+            self.current_status[source_name] = "🟢 Idle"
+            return
+
         buffer_info["data"] = b""
         buffer_info["start_time"] = None
 
@@ -157,7 +207,8 @@ class AudioTranscriber:
             is_speaking_too_fast = source_name == "Me" and wpm > 160
             hallucinations = [
                 "you", "thank you", "thanks", "you.", "thanks.", "thank you.", "subtitles by",
-                "субтитры сделал dimatorzok", "субтитры сделал", "dimatorzok", "перевод и озвучка"
+                "субтитры сделал dimatorzok", "субтитры сделал", "dimatorzok", "перевод и озвучка",
+                "or movie virushili", "movie virushili", "pireti zed"
             ]
             if text and len(text) > 3 and not any(h in text.lower() for h in hallucinations):
                 self.transcript_data[source_name].appendleft((f"{source_name}: [{text}]\n\n", timestamp))

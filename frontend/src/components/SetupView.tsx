@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Mic, User, Rocket, Upload, CheckCircle, AlertCircle, Speaker, History, Clock3, Download, FileText, RefreshCw, ChevronRight, Sparkles, Loader2, Link2 } from 'lucide-react';
+import { Settings, Mic, User, Rocket, Upload, CheckCircle, AlertCircle, Speaker, History, Clock3, Download, FileText, RefreshCw, ChevronRight, Sparkles, Loader2, Link2, BriefcaseBusiness, Globe } from 'lucide-react';
 
 const API_BASE = 'http://127.0.0.1:8000';
 
@@ -73,7 +73,7 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
   const [jobFetchStatus, setJobFetchStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   // Persona state
-  const [selectedPersona, setSelectedPersona] = useState('Short Bullets');
+  const [selectedPersona, setSelectedPersona] = useState('Interview Copilot');
 
   // History state
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -85,28 +85,22 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
 
   const personas = [
     {
-      id: 'Short Bullets',
-      name: 'Short Bullets',
-      description: 'Concise bullet points (max 3, 10 words each)',
-      icon: '🎯'
+      id: 'Interview Copilot',
+      name: 'Interview Copilot',
+      description: 'Comprehensive, expert answers for technical and HR interviews.',
+      icon: BriefcaseBusiness,
+      accent: 'from-indigo-500/20 to-blue-500/10 border-indigo-400/40 text-indigo-200',
+      iconColor: 'text-indigo-300',
+      glow: 'shadow-indigo-950/30',
     },
     {
-      id: 'Technical Deep Dive',
-      name: 'Technical Deep Dive',
-      description: 'Architecture, tech stacks, SDLC focus',
-      icon: '⚙️'
-    },
-    {
-      id: 'STAR Method',
-      name: 'STAR Method',
-      description: 'Situation, Task, Action, Result format',
-      icon: '⭐'
-    },
-    {
-      id: 'Coach Advice',
-      name: 'Coach Advice',
-      description: 'Strategic coaching instructions',
-      icon: '🎓'
+      id: 'Client English Assistant',
+      name: 'Client English Assistant',
+      description: 'Real-time translation and professional English replies for client calls.',
+      icon: Globe,
+      accent: 'from-emerald-500/20 to-cyan-500/10 border-emerald-400/40 text-emerald-200',
+      iconColor: 'text-emerald-300',
+      glow: 'shadow-emerald-950/30',
     }
   ];
 
@@ -328,43 +322,79 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
     });
   };
 
-  const buildMarkdownExport = (session: SessionDetail) => {
-    const lines = [
-      `# Interview Session`,
+  const generateMarkdown = (sessionData: any) => {
+    const logEntries = sessionData?.log || sessionData?.history_log || sessionData?.historyLog || [];
+    const createdAt = sessionData?.created_at || sessionData?.date || sessionData?.started_at || sessionData?.ended_at;
+    const persona = sessionData?.persona || 'N/A';
+    const context = sessionData?.context || 'N/A';
+    const durationSeconds = Number(sessionData?.duration_seconds ?? sessionData?.duration ?? 0);
+    const talkRatioValue = Number(sessionData?.talk_ratio ?? 0);
+    const applicantRatio = Math.max(0, Math.min(1, talkRatioValue));
+    const interviewerRatio = Math.max(0, Math.min(1, 1 - applicantRatio));
+
+    const lines: string[] = [
+      '# Interview Session Summary',
       '',
-      `- Date: ${session.created_at || session.date}`,
-      `- Duration: ${formatDuration(session.duration_seconds)}`,
-      `- Talk Time Ratio: ${(Math.max(0, Math.min(1, session.talk_ratio || 0)) * 100).toFixed(1)}%`,
-      `- Persona: ${session.persona || 'N/A'}`,
+      `**Date/Time:** ${createdAt ? formatTimestamp(createdAt) : 'Unknown'}`,
+      '',
+      '## Metrics',
+      `- **Duration:** ${formatDuration(durationSeconds)}`,
+      `- **Talk Ratio:** Interviewer ${(interviewerRatio * 100).toFixed(1)}% vs Applicant ${(applicantRatio * 100).toFixed(1)}%`,
+      '',
+      '## Context',
+      `- **Persona:** ${persona}`,
+      '',
+      '**Context Applied:**',
+      '',
+      context === 'N/A' ? '_No context provided._' : context,
       '',
       '## Timeline',
       ''
     ];
 
-    session.history_log.forEach((event) => {
-      const timestamp = formatTimestamp(event.timestamp);
+    const entries = Array.isArray(logEntries) ? logEntries : [];
+    if (!entries.length) {
+      lines.push('_No transcript or hint timeline was captured for this session._');
+      return lines.join('\n');
+    }
+
+    entries.forEach((event: any) => {
+      if (!event || typeof event !== 'object') return;
+
       if (event.type === 'transcript') {
-        lines.push(`- [${timestamp}] ${event.speaker || 'Speaker'}: ${event.text || ''}`);
-      } else if (event.type === 'llm_hint') {
-        lines.push(`- [${timestamp}] LLM Hint: ${event.text || ''}`);
-      } else {
-        lines.push(`- [${timestamp}] ${event.type}`);
+        const speaker = event.speaker === 'Me' ? 'Me' : 'Interviewer';
+        const text = String(event.text || '').trim();
+        if (text) {
+          lines.push(`- [${speaker}]: ${text}`);
+        }
+        return;
+      }
+
+      if (event.type === 'llm_hint') {
+        const text = String(event.text || '').trim();
+        if (text) {
+          lines.push(`> 🤖 Copilot Hint: ${text}`);
+          lines.push('');
+        }
       }
     });
 
-    return lines.join('\n');
+    return lines.join('\n').trim();
   };
 
-  const handleExportMarkdown = () => {
-    if (!selectedSession) return;
+  const handleExportMarkdown = (sessionData: any) => {
+    if (!sessionData) return;
 
-    const markdown = buildMarkdownExport(selectedSession);
+    const markdown = generateMarkdown(sessionData);
     const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = selectedSession.filename.replace(/\.json$/i, '.md');
+    anchor.download = 'interview_summary.md';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
     anchor.click();
+    anchor.remove();
     URL.revokeObjectURL(url);
   };
 
@@ -537,34 +567,48 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
     <div className="space-y-6 animate-in fade-in duration-300">
       <h3 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
         <User size={20} className="text-amber-400" />
-        Choose AI Persona
+        Choose Copilot Mode
       </h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {personas.map((persona) => (
           <button
             key={persona.id}
             onClick={() => setSelectedPersona(persona.id)}
-            className={`group p-6 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${
+            className={`group relative overflow-hidden rounded-3xl border p-7 text-left transition-all duration-300 ${
               selectedPersona === persona.id
-                ? 'border-amber-500 bg-amber-500/10'
-                : 'border-slate-700 bg-slate-800 hover:border-slate-600 hover:bg-slate-700/50'
+                ? `${persona.accent} ${persona.glow} bg-linear-to-br`
+                : 'border-slate-700 bg-slate-800/70 hover:border-slate-500 hover:bg-slate-800'
             }`}
           >
             {selectedPersona === persona.id && (
-              <div className="absolute top-0 right-0 p-2 text-amber-500">
-                <CheckCircle size={20} />
+              <div className="absolute right-4 top-4 rounded-full border border-white/10 bg-white/10 p-2 text-white backdrop-blur-sm">
+                <CheckCircle size={18} />
               </div>
             )}
-            <div className="text-4xl mb-4 group-hover:scale-110 transition-transform duration-300">{persona.icon}</div>
-            <h4 className={`font-bold text-lg mb-1 ${selectedPersona === persona.id ? 'text-amber-400' : 'text-slate-100'}`}>
-              {persona.name}
-            </h4>
-            <p className="text-slate-400 text-sm leading-relaxed">{persona.description}</p>
+
+            <div className="flex items-start gap-4">
+              <div className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-slate-950/30 ${persona.iconColor}`}>
+                <persona.icon size={28} />
+              </div>
+              <div className="flex-1">
+                <h4 className={`text-xl font-black tracking-tight ${selectedPersona === persona.id ? 'text-white' : 'text-slate-100'}`}>
+                  {persona.name}
+                </h4>
+                <p className="mt-2 max-w-md text-sm leading-6 text-slate-300">
+                  {persona.description}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between text-xs uppercase tracking-[0.24em] text-slate-400">
+              <span>Active mode</span>
+              <span>{selectedPersona === persona.id ? 'Selected' : 'Tap to activate'}</span>
+            </div>
           </button>
         ))}
       </div>
-      <div className="p-4 bg-amber-900/10 border border-amber-900/20 rounded-xl text-amber-200/70 text-xs italic">
-        Tip: Switch to "STAR Method" for behavioral questions, and "Technical Deep Dive" for coding or system design interviews.
+      <div className="rounded-2xl border border-slate-700/70 bg-slate-800/50 p-4 text-xs italic text-slate-300">
+        Interview Copilot is optimized for interviews. Client English Assistant is optimized for live client calls and translation support.
       </div>
     </div>
   );
@@ -682,11 +726,11 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
                 </div>
 
                 <button
-                  onClick={handleExportMarkdown}
+                  onClick={() => handleExportMarkdown(selectedSession)}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-500 px-4 py-3 text-sm font-bold text-slate-950 transition-colors hover:bg-cyan-400"
                 >
                   <Download size={16} />
-                  Export to Markdown
+                  📥 Export to Markdown
                 </button>
               </div>
 

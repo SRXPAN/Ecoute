@@ -257,6 +257,16 @@ async def llm_worker(llm_queue: asyncio.Queue):
                         "text": token,
                         "is_streaming": True
                     })
+                elif llm_data.get("type") == "llm_hint" and llm_data.get("clear"):
+                    current_response = ""
+                    session.current_llm_response = ""
+
+                    await manager.broadcast({
+                        "type": "llm_hint",
+                        "text": "",
+                        "clear": True,
+                        "is_streaming": False
+                    })
                 elif llm_data.get("type") == "llm_complete":
                     if current_response.strip():
                         session.record_history_event({
