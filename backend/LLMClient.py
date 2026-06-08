@@ -48,12 +48,6 @@ class LLMClient:
         """
         Dynamically builds the system prompt based on the selected AI persona.
         """
-        universal_instruction = (
-            "Never apologize or refuse to answer. If a question is conversational or non-technical "
-            "(e.g., 'tell me about yourself' or 'why did you change careers'), answer it naturally "
-            "based on the user's resume context. Do not block non-technical questions."
-        )
-
         if self.persona == "Interview Copilot":
             base_prompt = (
                 "You are an expert IT professional assisting the user with a technical interview. "
@@ -72,12 +66,12 @@ class LLMClient:
             )
         else:
             base_prompt = (
-                "You are a real-time interview or client-call assistant. Use the user's context to help them respond clearly, "
+                "You are a Professional Copilot assistant. Use the user's context to help them respond clearly, "
                 "professionally, and naturally in the language of the conversation."
             )
 
         context_str = self.context if self.context else "[No context provided]"
-        return f"{base_prompt}\n\n{universal_instruction}\n\nCONTEXT (User's Background):\n{context_str}"
+        return f"{base_prompt}\n\nCONTEXT (User's Background):\n{context_str}"
 
     def _trim_history(self):
         """Keep only the most recent conversation messages to prevent token overflow."""
