@@ -5,15 +5,17 @@ from datetime import datetime
 import numpy as np
 from groq import Groq
 from collections import deque
+import asyncio
 
 PHRASE_TIMEOUT = 1.0
 MAX_PHRASES = 10
 MAX_PHRASE_DURATION = 8.0
-RMS_THRESHOLD = 30  # ЗНИЖЕНО: Тепер краще ловить звичайну мову
+RMS_THRESHOLD = 30
 
 class AudioTranscriber:
-    def __init__(self, speaker_recorder):
+    def __init__(self, speaker_recorder, transcript_queue=None):
         self.speaker_recorder = speaker_recorder
+        self.transcript_queue = transcript_queue  # asyncio.Queue for output
 
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -29,11 +31,10 @@ class AudioTranscriber:
             "Speaker": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False}
         }
 
-        # СТАТУСИ ДЛЯ ІНТЕРФЕЙСУ
         self.current_status = {"Speaker": "🟢 Idle"}
 
         self.is_running = False
-        self.is_paused = False  # Manual pause toggle
+        self.is_paused = False
         print("[INFO] Groq-based audio transcriber initialized with Smart VAD (Speaker only)")
 
     def start(self):
@@ -144,6 +145,22 @@ class AudioTranscriber:
             if text and len(text) > 3 and not any(h in text.lower() for h in hallucinations):
                 self.transcript_data[source_name].appendleft((f"{source_name}: [{text}]\n\n", timestamp))
                 print(f"[TRANSCRIPTION] {source_name}: {text}")
+
+                # Push to async queue if available
+                if self.transcript_queue:
+                    try:
+                        loop = asyncio.get_event_loop()
+                        asyncio.run_coroutine_threadsafe(
+                            self.transcript_queue.put({
+                                "type": "transcript",
+                                "speaker": "interviewer",
+                                "text": text,
+                                "timestamp": timestamp.isoformat()
+                            }),
+                            loop
+                        )
+                    except Exception as e:
+                        print(f"[WARNING] Failed to push transcript to queue: {e}")
 
             self.current_status[source_name] = "🟢 Idle"
 

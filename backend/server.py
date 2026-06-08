@@ -1,8 +1,12 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-import json
+import asyncio
 from typing import List
+from AudioRecorder import SpeakerRecorder
+from AudioTranscriber import AudioTranscriber
+from LLMClient import LLMClient
+import threading
 
 
 class ConnectionManager:
@@ -14,14 +18,98 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def send_json(self, websocket: WebSocket, message: dict):
-        await websocket.send_json(message)
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            print(f"[ERROR] Failed to send message: {e}")
 
     async def broadcast(self, message: dict):
-        for connection in self.active_connections:
-            await connection.send_json(message)
+        for connection in self.active_connections[:]:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                print(f"[ERROR] Failed to broadcast to connection: {e}")
+                self.disconnect(connection)
+
+
+class InterviewSession:
+    def __init__(self):
+        self.speaker_recorder = None
+        self.transcriber = None
+        self.llm_client = None
+        self.transcript_queue = None
+        self.llm_queue = None
+        self.is_running = False
+        self.is_frozen = False
+        self.worker_tasks = []
+
+    def initialize(self, transcript_queue, llm_queue):
+        """Initialize audio and LLM components"""
+        self.transcript_queue = transcript_queue
+        self.llm_queue = llm_queue
+
+        self.speaker_recorder = SpeakerRecorder()
+        self.transcriber = AudioTranscriber(
+            speaker_recorder=self.speaker_recorder,
+            transcript_queue=transcript_queue
+        )
+        self.llm_client = LLMClient(
+            provider="local",
+            persona="Short Bullets",
+            llm_queue=llm_queue
+        )
+        print("[INFO] Interview session initialized")
+
+    def start(self):
+        """Start audio recording and transcription"""
+        if not self.is_running:
+            self.transcriber.start()
+            self.is_running = True
+            print("[INFO] Interview session started")
+
+    def stop(self):
+        """Stop audio recording and transcription"""
+        if self.is_running:
+            self.transcriber.stop()
+            self.is_running = False
+            print("[INFO] Interview session stopped")
+
+    def freeze(self):
+        """Pause transcription and LLM processing"""
+        self.is_frozen = True
+        if self.transcriber:
+            self.transcriber.toggle_pause()
+        print("[INFO] Interview session frozen")
+
+    def unfreeze(self):
+        """Resume transcription and LLM processing"""
+        self.is_frozen = False
+        if self.transcriber:
+            self.transcriber.toggle_pause()
+        print("[INFO] Interview session unfrozen")
+
+    def process_llm_for_transcript(self, transcript_text: str):
+        """Process transcript through LLM in a separate thread"""
+        def _run_llm():
+            try:
+                for token in self.llm_client.get_suggestion(transcript_text):
+                    if not self.is_frozen:
+                        pass  # Tokens are already being pushed to queue
+            except Exception as e:
+                print(f"[ERROR] LLM processing failed: {e}")
+
+        thread = threading.Thread(target=_run_llm, daemon=True)
+        thread.start()
+
+    def cleanup(self):
+        """Clean up resources"""
+        self.stop()
+        if self.transcriber:
+            self.transcriber.close()
 
 
 app = FastAPI(title="AI Interview Assistant Backend")
@@ -35,6 +123,84 @@ app.add_middleware(
 )
 
 manager = ConnectionManager()
+session = InterviewSession()
+
+
+async def transcript_worker(transcript_queue: asyncio.Queue):
+    """Worker that broadcasts transcript updates to all connected clients"""
+    print("[INFO] Transcript worker started")
+    while True:
+        try:
+            transcript_data = await transcript_queue.get()
+
+            if not session.is_frozen:
+                await manager.broadcast(transcript_data)
+
+                # Trigger LLM processing for new transcript
+                if transcript_data.get("type") == "transcript":
+                    text = transcript_data.get("text", "")
+                    if len(text) >= 10:
+                        session.process_llm_for_transcript(text)
+
+        except Exception as e:
+            print(f"[ERROR] Transcript worker error: {e}")
+            await asyncio.sleep(0.1)
+
+
+async def llm_worker(llm_queue: asyncio.Queue):
+    """Worker that broadcasts LLM tokens to all connected clients"""
+    print("[INFO] LLM worker started")
+    current_response = ""
+
+    while True:
+        try:
+            llm_data = await llm_queue.get()
+
+            if not session.is_frozen:
+                if llm_data.get("type") == "llm_token":
+                    token = llm_data.get("token", "")
+                    current_response += token
+
+                    # Broadcast the streaming token
+                    await manager.broadcast({
+                        "type": "llm_hint",
+                        "text": token,
+                        "is_streaming": True
+                    })
+                elif llm_data.get("type") == "llm_complete":
+                    # Signal completion
+                    await manager.broadcast({
+                        "type": "llm_hint",
+                        "text": "",
+                        "is_streaming": False,
+                        "complete": True
+                    })
+                    current_response = ""
+
+        except Exception as e:
+            print(f"[ERROR] LLM worker error: {e}")
+            await asyncio.sleep(0.1)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize background workers"""
+    transcript_queue = asyncio.Queue()
+    llm_queue = asyncio.Queue()
+
+    session.initialize(transcript_queue, llm_queue)
+
+    asyncio.create_task(transcript_worker(transcript_queue))
+    asyncio.create_task(llm_worker(llm_queue))
+
+    print("[INFO] Background workers initialized")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    session.cleanup()
+    print("[INFO] Server shutdown complete")
 
 
 @app.get("/health")
@@ -42,7 +208,9 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "AI Interview Assistant Backend",
-        "active_connections": len(manager.active_connections)
+        "active_connections": len(manager.active_connections),
+        "interview_running": session.is_running,
+        "is_frozen": session.is_frozen
     }
 
 
@@ -59,30 +227,79 @@ async def websocket_endpoint(websocket: WebSocket):
 
         while True:
             data = await websocket.receive_json()
+            action = data.get("action")
 
-            command = data.get("command")
+            if action == "start_interview":
+                if not session.is_running:
+                    session.start()
+                    await manager.send_json(websocket, {
+                        "type": "response",
+                        "action": "start_interview",
+                        "status": "started",
+                        "message": "Interview session started"
+                    })
+                else:
+                    await manager.send_json(websocket, {
+                        "type": "response",
+                        "action": "start_interview",
+                        "status": "already_running",
+                        "message": "Interview session already running"
+                    })
 
-            if command == "ping":
+            elif action == "stop_interview":
+                session.stop()
                 await manager.send_json(websocket, {
                     "type": "response",
-                    "command": "ping",
+                    "action": "stop_interview",
+                    "status": "stopped",
+                    "message": "Interview session stopped"
+                })
+
+            elif action == "freeze":
+                session.freeze()
+                await manager.send_json(websocket, {
+                    "type": "response",
+                    "action": "freeze",
+                    "status": "frozen",
+                    "message": "Interview session frozen"
+                })
+
+            elif action == "unfreeze":
+                session.unfreeze()
+                await manager.send_json(websocket, {
+                    "type": "response",
+                    "action": "unfreeze",
+                    "status": "unfrozen",
+                    "message": "Interview session unfrozen"
+                })
+
+            elif action == "ping":
+                await manager.send_json(websocket, {
+                    "type": "response",
+                    "action": "ping",
                     "message": "pong"
                 })
+
             else:
                 await manager.send_json(websocket, {
                     "type": "response",
-                    "command": command,
-                    "message": f"Received command: {command}",
-                    "data": data
+                    "action": action,
+                    "status": "unknown",
+                    "message": f"Unknown action: {action}"
                 })
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+        print("[INFO] Client disconnected")
     except Exception as e:
-        await manager.send_json(websocket, {
-            "type": "error",
-            "message": str(e)
-        })
+        print(f"[ERROR] WebSocket error: {e}")
+        try:
+            await manager.send_json(websocket, {
+                "type": "error",
+                "message": str(e)
+            })
+        except:
+            pass
         manager.disconnect(websocket)
 
 

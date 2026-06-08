@@ -1,9 +1,0 @@
-numpy
-customtkinter
-PyAudioWPatch
-python-dotenv
-sounddevice
-groq
-openai
-pyinstaller
-keyboard

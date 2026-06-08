@@ -1,3 +1,12 @@
 fastapi
 uvicorn
 websockets
+numpy
+groq
+customtkinter
+PyAudioWPatch
+python-dotenv
+sounddevice
+openai
+pyinstaller
+keyboard

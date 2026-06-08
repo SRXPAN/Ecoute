@@ -10,21 +10,22 @@ class LLMClient:
     """
     LLM client manager utilizing local LM Studio server via OpenAI-compatible API.
     Optimized for real-time streaming and safe memory management.
+    GUI-independent version with queue support.
     """
 
-    def __init__(self, provider: str = "local", persona: str = "Short Bullets"):
+    def __init__(self, provider: str = "local", persona: str = "Short Bullets", llm_queue=None):
         self.provider = provider.lower()
         self.persona = persona
-        self.model_name = 'local-model'  # LM Studio ignores this but OpenAI client requires it
+        self.llm_queue = llm_queue  # asyncio.Queue for streaming output
+        self.model_name = 'local-model'
         self.context = self._load_interview_context()
         self.system_prompt = self._build_system_prompt()
         self.history = []
-        self.max_history_messages = 6  # Keep only last 3 Q&A pairs
+        self.max_history_messages = 6
 
-        # Connect to local LM Studio server
         self.client = OpenAI(
             base_url="http://127.0.0.1:1234/v1",
-            api_key="lm-studio"  # LM Studio doesn't validate this but OpenAI client requires it
+            api_key="lm-studio"
         )
 
         print(f"[INFO] Local LLM client initialized successfully (Persona: {self.persona}), connecting to LM Studio at http://127.0.0.1:1234")
@@ -91,6 +92,22 @@ Keep it highly concise so the user can read it at a glance. ALWAYS respond in th
                 if chunk.choices[0].delta.content is not None:
                     token = chunk.choices[0].delta.content
                     full_response += token
+
+                    # Push to async queue if available
+                    if self.llm_queue:
+                        try:
+                            import asyncio
+                            loop = asyncio.get_event_loop()
+                            asyncio.run_coroutine_threadsafe(
+                                self.llm_queue.put({
+                                    "type": "llm_token",
+                                    "token": token
+                                }),
+                                loop
+                            )
+                        except Exception as e:
+                            print(f"[WARNING] Failed to push LLM token to queue: {e}")
+
                     yield token
 
             # Save to conversation history
