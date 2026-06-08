@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Mic, User, Rocket, Upload, CheckCircle, AlertCircle, Speaker, History, Clock3, Download, FileText, RefreshCw, ChevronRight, Sparkles } from 'lucide-react';
+import { Settings, Mic, User, Rocket, Upload, CheckCircle, AlertCircle, Speaker, History, Clock3, Download, FileText, RefreshCw, ChevronRight, Sparkles, Loader2, Link2 } from 'lucide-react';
 
 const API_BASE = 'http://127.0.0.1:8000';
 
@@ -67,6 +67,10 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [uploadMessage, setUploadMessage] = useState('');
+  const [jobUrl, setJobUrl] = useState('');
+  const [isFetchingJob, setIsFetchingJob] = useState(false);
+  const [jobFetchMessage, setJobFetchMessage] = useState('');
+  const [jobFetchStatus, setJobFetchStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   // Persona state
   const [selectedPersona, setSelectedPersona] = useState('Short Bullets');
@@ -176,6 +180,62 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
       setUploadStatus('error');
       setUploadMessage('Failed to connect to backend. Is server.py running?');
       console.error('[SetupView] Upload error:', error);
+    }
+  };
+
+  const fetchJobDescription = async () => {
+    const trimmedUrl = jobUrl.trim();
+    if (!trimmedUrl) {
+      setJobFetchStatus('error');
+      setJobFetchMessage('Paste a job posting URL first.');
+      return;
+    }
+
+    setIsFetchingJob(true);
+    setJobFetchStatus('idle');
+    setJobFetchMessage('');
+
+    try {
+      const response = await fetch(`${API_BASE}/api/parse_job`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: trimmedUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.status !== 'success') {
+        throw new Error(data.detail || data.message || 'Failed to fetch job description');
+      }
+
+      const scrapedText = data.extracted_text?.trim() || '';
+      setContextText((current) => {
+        const separator = '\n\n--- JOB DESCRIPTION ---\n\n';
+        if (!scrapedText) {
+          return current;
+        }
+
+        if (!current.trim()) {
+          return scrapedText;
+        }
+
+        if (current.includes('--- JOB DESCRIPTION ---')) {
+          return `${current}${separator}${scrapedText}`;
+        }
+
+        return `${current}${separator}${scrapedText}`;
+      });
+
+      setJobFetchStatus('success');
+      setJobFetchMessage('Job description added to your editable context.');
+    } catch (error) {
+      console.error('[SetupView] Job fetch failed:', error);
+      setJobFetchStatus('error');
+      setJobFetchMessage(error instanceof Error ? error.message : 'Failed to fetch job description');
+    } finally {
+      setIsFetchingJob(false);
     }
   };
 
@@ -382,6 +442,39 @@ export const SetupView = ({ onStartInterview }: SetupViewProps) => {
           <Upload size={20} className="text-green-400" />
           Interview Context (PDF Resume/Job Desc)
         </h3>
+        <div className="rounded-3xl border border-slate-700/70 bg-slate-800/50 p-5 shadow-lg shadow-slate-950/20 mb-5">
+          <div className="flex items-center gap-2 mb-3 text-slate-200 font-semibold">
+            <Link2 size={18} className="text-cyan-400" />
+            Job Posting URL
+          </div>
+          <div className="flex flex-col gap-3 md:flex-row">
+            <input
+              type="url"
+              value={jobUrl}
+              onChange={(e) => setJobUrl(e.target.value)}
+              placeholder="https://company.com/careers/role"
+              className="flex-1 rounded-2xl border border-slate-600 bg-slate-900/70 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-all"
+            />
+            <button
+              onClick={fetchJobDescription}
+              disabled={isFetchingJob}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-500 px-5 py-3 font-bold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+            >
+              {isFetchingJob ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}
+              {isFetchingJob ? 'Fetching...' : 'Fetch Job Description'}
+            </button>
+          </div>
+          {jobFetchMessage && (
+            <div className={`mt-3 flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${
+              jobFetchStatus === 'success'
+                ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
+                : 'border-rose-500/20 bg-rose-500/10 text-rose-200'
+            }`}>
+              {jobFetchStatus === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+              <span>{jobFetchMessage}</span>
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="group relative cursor-pointer">
             <input

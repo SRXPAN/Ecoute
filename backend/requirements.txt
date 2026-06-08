@@ -12,3 +12,5 @@ pyinstaller
 keyboard
 PyPDF2
 python-multipart
+requests
+beautifulsoup4

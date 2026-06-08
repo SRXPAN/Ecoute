@@ -93,8 +93,11 @@ function App() {
 
   const { connectionStatus, sendMessage } = useWebSocket(handleWebSocketMessage);
 
+  const [initialPersona, setInitialPersona] = useState('Short Bullets');
+
   const handleStartInterview = (config: any) => {
     console.log('[App] Starting interview with config:', config);
+    setInitialPersona(config.persona || 'Short Bullets');
     sendMessage({
       action: 'start_interview',
       mic_index: config.mic_index,
@@ -173,6 +176,8 @@ function App() {
           transcript={transcript}
           llmHint={llmHint}
           isSpeakingTooFast={isSpeakingTooFast}
+          sendMessage={sendMessage}
+          initialPersona={initialPersona}
         />
       )}
     </div>

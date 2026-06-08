@@ -10,6 +10,8 @@ interface InterviewViewProps {
   transcript: string;
   llmHint: string;
   isSpeakingTooFast: boolean;
+  sendMessage?: (message: any) => void;
+  initialPersona?: string;
 }
 
 export const InterviewView = ({
@@ -20,10 +22,13 @@ export const InterviewView = ({
   transcript,
   llmHint,
   isSpeakingTooFast,
+  sendMessage,
+  initialPersona = 'Short Bullets',
 }: InterviewViewProps) => {
   const [isStealthEnabled, setIsStealthEnabled] = useState(false);
   const [stealthStatus, setStealthStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [showSpeakSlower, setShowSpeakSlower] = useState(false);
+  const [activePersona, setActivePersona] = useState(initialPersona);
 
   useEffect(() => {
     if (!isSpeakingTooFast) {
@@ -37,6 +42,32 @@ export const InterviewView = ({
 
     return () => window.clearTimeout(timeout);
   }, [isSpeakingTooFast]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey) return;
+
+      let newPersona: string | null = null;
+
+      if (event.key === '1') {
+        newPersona = 'Short Bullets';
+      } else if (event.key === '2') {
+        newPersona = 'Technical Deep Dive';
+      } else if (event.key === '3') {
+        newPersona = 'STAR Method';
+      }
+
+      if (newPersona && sendMessage) {
+        event.preventDefault();
+        setActivePersona(newPersona);
+        sendMessage({ action: 'change_persona', persona: newPersona });
+        console.log(`[InterviewView] Persona changed to: ${newPersona}`);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sendMessage]);
 
   const handleFreezeToggle = () => {
     if (isFrozen) {
@@ -97,6 +128,54 @@ export const InterviewView = ({
             {isStealthEnabled ? <EyeOff size={16} /> : <Eye size={16} />}
             <span>Stealth</span>
           </button>
+        </div>
+      </div>
+
+      {/* Quick Personas Bar */}
+      <div className="bg-slate-800/50 border-b border-slate-700/50 px-6 py-2">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Quick Personas:</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setActivePersona('Short Bullets');
+                sendMessage?.({ action: 'change_persona', persona: 'Short Bullets' });
+              }}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                activePersona === 'Short Bullets'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              [Alt+1] Short Bullets
+            </button>
+            <button
+              onClick={() => {
+                setActivePersona('Technical Deep Dive');
+                sendMessage?.({ action: 'change_persona', persona: 'Technical Deep Dive' });
+              }}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                activePersona === 'Technical Deep Dive'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              [Alt+2] Tech Deep Dive
+            </button>
+            <button
+              onClick={() => {
+                setActivePersona('STAR Method');
+                sendMessage?.({ action: 'change_persona', persona: 'STAR Method' });
+              }}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                activePersona === 'STAR Method'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              [Alt+3] STAR Method
+            </button>
+          </div>
         </div>
       </div>
 

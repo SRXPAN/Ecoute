@@ -1,11 +1,15 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import uvicorn
 import asyncio
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
+import requests
+from bs4 import BeautifulSoup  # pyright: ignore[reportMissingImports]
 from AudioRecorder import SpeakerRecorder, MicRecorder
 from AudioTranscriber import AudioTranscriber
 from LLMClient import LLMClient
@@ -17,6 +21,10 @@ import pyaudiowpatch as pyaudio
 
 BASE_DIR = Path(__file__).resolve().parent
 SESSIONS_DIR = BASE_DIR / "data" / "sessions"
+
+
+class JobUrlRequest(BaseModel):
+    url: str
 
 
 class ConnectionManager:
@@ -408,6 +416,39 @@ async def get_session(filename: str):
     return {"success": True, "session": payload}
 
 
+@app.post("/api/parse_job")
+async def parse_job(request: JobUrlRequest):
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0.0.0 Safari/537.36"
+            )
+        }
+
+        response = requests.get(request.url.strip(), headers=headers, timeout=15)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+
+        extracted_text = soup.get_text(separator="\n")
+        extracted_text = re.sub(r"\r", "\n", extracted_text)
+        extracted_text = re.sub(r"[ \t]+", " ", extracted_text)
+        extracted_text = re.sub(r"\n\s*\n+", "\n\n", extracted_text)
+        extracted_text = extracted_text.strip()
+
+        if not extracted_text:
+            raise ValueError("No readable text found at the provided URL")
+
+        return {"status": "success", "extracted_text": extracted_text}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse job URL: {e}")
+
+
 @app.post("/api/upload_context")
 async def upload_context(file: UploadFile = File(...)):
     """
@@ -574,6 +615,25 @@ async def websocket_endpoint(websocket: WebSocket):
                     "status": "unfrozen",
                     "message": "Interview session unfrozen"
                 })
+
+            elif action == "change_persona":
+                persona = data.get("persona")
+                if persona and session.llm_client:
+                    session.llm_client.set_persona(persona)
+                    await manager.send_json(websocket, {
+                        "type": "response",
+                        "action": "change_persona",
+                        "status": "success",
+                        "persona": persona,
+                        "message": f"Persona changed to: {persona}"
+                    })
+                else:
+                    await manager.send_json(websocket, {
+                        "type": "response",
+                        "action": "change_persona",
+                        "status": "error",
+                        "message": "No active session or invalid persona"
+                    })
 
             elif action == "ping":
                 await manager.send_json(websocket, {

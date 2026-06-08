@@ -151,6 +151,12 @@ Keep it highly concise so the user can read it at a glance. ALWAYS respond in th
             print(f"[ERROR] Make sure LM Studio server is running at http://127.0.0.1:1234")
             return ""
 
+    def set_persona(self, new_persona: str):
+        """Update the persona and regenerate system prompt"""
+        self.persona = new_persona
+        self.system_prompt = self._build_system_prompt()
+        print(f"[INFO] Persona changed to: {new_persona}")
+
     def reset_conversation(self):
         """Clear conversation history"""
         self.history = []
