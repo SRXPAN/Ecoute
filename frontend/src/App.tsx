@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { useWebSocket } from './hooks/useWebSocket';
 import { SetupView } from './components/SetupView';
@@ -9,6 +9,8 @@ function App() {
   const [isFrozen, setIsFrozen] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [llmHint, setLlmHint] = useState('');
+  const [isSpeakingTooFast, setIsSpeakingTooFast] = useState(false);
+  const fastSpeechTimeoutRef = useRef<number | null>(null);
 
   // Handle window resizing based on mode
   useEffect(() => {
@@ -39,6 +41,19 @@ function App() {
           const newText = `${message.speaker}: ${message.text}\n\n`;
           return newText + prev;
         });
+
+        if (message.is_speaking_too_fast) {
+          setIsSpeakingTooFast(true);
+
+          if (fastSpeechTimeoutRef.current) {
+            window.clearTimeout(fastSpeechTimeoutRef.current);
+          }
+
+          fastSpeechTimeoutRef.current = window.setTimeout(() => {
+            setIsSpeakingTooFast(false);
+            fastSpeechTimeoutRef.current = null;
+          }, 3000);
+        }
         break;
 
       case 'llm_hint':
@@ -52,8 +67,10 @@ function App() {
       case 'response':
         if (message.action === 'start_interview' && message.status === 'started') {
           console.log('[App] Interview started successfully');
+          setIsSpeakingTooFast(false);
         } else if (message.action === 'stop_interview' && message.status === 'stopped') {
           console.log('[App] Interview stopped successfully');
+          setIsSpeakingTooFast(false);
         } else if (message.action === 'freeze' && message.status === 'frozen') {
           setIsFrozen(true);
         } else if (message.action === 'unfreeze' && message.status === 'unfrozen') {
@@ -88,6 +105,7 @@ function App() {
     setIsInterviewActive(true);
     setTranscript('');
     setLlmHint('');
+    setIsSpeakingTooFast(false);
   };
 
   const handleEndSession = () => {
@@ -97,7 +115,21 @@ function App() {
     setIsFrozen(false);
     setTranscript('');
     setLlmHint('');
+    setIsSpeakingTooFast(false);
+
+    if (fastSpeechTimeoutRef.current) {
+      window.clearTimeout(fastSpeechTimeoutRef.current);
+      fastSpeechTimeoutRef.current = null;
+    }
   };
+
+  useEffect(() => {
+    return () => {
+      if (fastSpeechTimeoutRef.current) {
+        window.clearTimeout(fastSpeechTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleFreeze = () => {
     console.log('[App] Freezing...');
@@ -140,6 +172,7 @@ function App() {
           isFrozen={isFrozen}
           transcript={transcript}
           llmHint={llmHint}
+          isSpeakingTooFast={isSpeakingTooFast}
         />
       )}
     </div>

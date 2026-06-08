@@ -125,19 +125,21 @@ class AudioTranscriber:
 
         audio_data = buffer_info["data"]
         timestamp = buffer_info["last_audio_time"]
+        start_time = buffer_info["start_time"] or timestamp
+        buffer_duration = max((timestamp - start_time).total_seconds(), 0.01) if timestamp and start_time else 0.01
 
         buffer_info["data"] = b""
         buffer_info["start_time"] = None
 
         threading.Thread(
             target=self._transcribe_with_groq,
-            args=(source_name, audio_data, timestamp, recorder),
+            args=(source_name, audio_data, timestamp, buffer_duration, recorder),
             daemon=True
         ).start()
 
         buffer_info["is_processing"] = False
 
-    def _transcribe_with_groq(self, source_name, audio_data, timestamp, recorder):
+    def _transcribe_with_groq(self, source_name, audio_data, timestamp, buffer_duration, recorder):
         try:
             self.current_status[source_name] = "⏳ Groq API"
             wav_bytes = recorder.create_wav_bytes(audio_data)
@@ -149,6 +151,10 @@ class AudioTranscriber:
             )
 
             text = transcription.strip()
+            word_count = len(text.split()) if text else 0
+            minutes_spoken = max(buffer_duration / 60.0, 1 / 60.0)
+            wpm = round(word_count / minutes_spoken, 1) if word_count else 0.0
+            is_speaking_too_fast = source_name == "Me" and wpm > 160
             hallucinations = [
                 "you", "thank you", "thanks", "you.", "thanks.", "thank you.", "subtitles by",
                 "субтитры сделал dimatorzok", "субтитры сделал", "dimatorzok", "перевод и озвучка"
@@ -165,7 +171,11 @@ class AudioTranscriber:
                                 "type": "transcript",
                                 "speaker": source_name,
                                 "text": text,
-                                "timestamp": timestamp.isoformat()
+                                "timestamp": timestamp.isoformat(),
+                                "duration_seconds": round(buffer_duration, 2),
+                                "word_count": word_count,
+                                "wpm": wpm,
+                                "is_speaking_too_fast": is_speaking_too_fast,
                             }
                         )
                     except Exception as e:

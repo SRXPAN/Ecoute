@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pause, Play, X, Snowflake, EyeOff, Eye } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -9,6 +9,7 @@ interface InterviewViewProps {
   isFrozen: boolean;
   transcript: string;
   llmHint: string;
+  isSpeakingTooFast: boolean;
 }
 
 export const InterviewView = ({
@@ -18,9 +19,24 @@ export const InterviewView = ({
   isFrozen,
   transcript,
   llmHint,
+  isSpeakingTooFast,
 }: InterviewViewProps) => {
   const [isStealthEnabled, setIsStealthEnabled] = useState(false);
   const [stealthStatus, setStealthStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [showSpeakSlower, setShowSpeakSlower] = useState(false);
+
+  useEffect(() => {
+    if (!isSpeakingTooFast) {
+      return;
+    }
+
+    setShowSpeakSlower(true);
+    const timeout = window.setTimeout(() => {
+      setShowSpeakSlower(false);
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
+  }, [isSpeakingTooFast]);
 
   const handleFreezeToggle = () => {
     if (isFrozen) {
@@ -84,6 +100,18 @@ export const InterviewView = ({
         </div>
       </div>
 
+      {showSpeakSlower && (
+        <div className="mx-6 mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/15 px-4 py-3 text-amber-100 shadow-[0_0_40px_rgba(251,191,36,0.12)] backdrop-blur-sm">
+          <div className="flex items-center justify-center gap-2 font-semibold tracking-wide">
+            <span className="text-lg">⏳</span>
+            <span>Speak Slower!</span>
+          </div>
+          <p className="mt-1 text-center text-xs text-amber-50/80">
+            You’re talking quickly enough that the system may miss detail. Pause between thoughts.
+          </p>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 overflow-hidden flex flex-col gap-4 p-6">
         {/* Transcript Section */}
@@ -101,7 +129,7 @@ export const InterviewView = ({
         </div>
 
         {/* AI Hints Section */}
-        <div className="flex-1 bg-gradient-to-br from-blue-900/20 to-purple-900/20 rounded-lg border border-blue-700/30 p-4 overflow-y-auto">
+        <div className="flex-1 bg-linear-to-br from-blue-900/20 to-purple-900/20 rounded-lg border border-blue-700/30 p-4 overflow-y-auto">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-blue-300 text-sm uppercase tracking-wide">
               AI Suggestions

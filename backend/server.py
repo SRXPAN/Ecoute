@@ -1,7 +1,10 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import asyncio
+import json
+from datetime import datetime
+from pathlib import Path
 from typing import List, Dict
 from AudioRecorder import SpeakerRecorder, MicRecorder
 from AudioTranscriber import AudioTranscriber
@@ -10,6 +13,10 @@ import threading
 import PyPDF2
 import io
 import pyaudiowpatch as pyaudio
+
+
+BASE_DIR = Path(__file__).resolve().parent
+SESSIONS_DIR = BASE_DIR / "data" / "sessions"
 
 
 class ConnectionManager:
@@ -51,12 +58,63 @@ class InterviewSession:
         self.is_running = False
         self.is_frozen = False
         self.worker_tasks = []
+        self.history_log = []
+        self.session_started_at = None
+        self.session_ended_at = None
+        self.current_llm_response = ""
+
+    def record_history_event(self, event: dict):
+        self.history_log.append(event)
+
+    def _calculate_talk_time_seconds(self) -> float:
+        return sum(
+            float(event.get("duration_seconds", 0) or 0)
+            for event in self.history_log
+            if event.get("type") == "transcript" and event.get("speaker") == "Me"
+        )
+
+    def build_session_payload(self) -> dict:
+        started_at = self.session_started_at or datetime.utcnow()
+        ended_at = self.session_ended_at or datetime.utcnow()
+        duration_seconds = max((ended_at - started_at).total_seconds(), 0.0)
+        talk_time_seconds = self._calculate_talk_time_seconds()
+        talk_ratio = round((talk_time_seconds / duration_seconds) if duration_seconds else 0.0, 3)
+
+        return {
+            "session_id": started_at.strftime("session_%Y%m%d_%H%M%S"),
+            "created_at": started_at.isoformat(),
+            "ended_at": ended_at.isoformat(),
+            "duration_seconds": round(duration_seconds, 2),
+            "talk_time_seconds": round(talk_time_seconds, 2),
+            "talk_ratio": talk_ratio,
+            "persona": getattr(self.llm_client, "persona", None),
+            "context": getattr(self.llm_client, "context", ""),
+            "history_log": self.history_log,
+        }
+
+    def save_session(self) -> dict:
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+        payload = self.build_session_payload()
+        filename = f"{payload['session_id']}.json"
+        payload["filename"] = filename
+
+        session_path = SESSIONS_DIR / filename
+        with session_path.open("w", encoding="utf-8") as session_file:
+            json.dump(payload, session_file, indent=2, ensure_ascii=False)
+
+        print(f"[INFO] Session saved to {session_path}")
+        return payload
 
     def initialize(self, transcript_queue, llm_queue, loop, mic_index=None, speaker_index=None, persona="Short Bullets", context=""):
         """Initialize audio and LLM components with user configuration"""
         self.transcript_queue = transcript_queue
         self.llm_queue = llm_queue
         self.loop = loop
+        self.history_log = []
+        self.session_started_at = datetime.utcnow()
+        self.session_ended_at = None
+        self.current_llm_response = ""
 
         # Initialize audio recorders with user-selected devices
         self.speaker_recorder = SpeakerRecorder(device_index=speaker_index)
@@ -96,6 +154,7 @@ class InterviewSession:
         if self.is_running:
             self.transcriber.stop()
             self.is_running = False
+            self.session_ended_at = datetime.utcnow()
             print("[INFO] Interview session stopped")
 
     def freeze(self):
@@ -153,6 +212,8 @@ async def transcript_worker(transcript_queue: asyncio.Queue):
         try:
             transcript_data = await transcript_queue.get()
 
+            session.record_history_event(transcript_data)
+
             if not session.is_frozen:
                 await manager.broadcast(transcript_data)
 
@@ -180,6 +241,7 @@ async def llm_worker(llm_queue: asyncio.Queue):
                 if llm_data.get("type") == "llm_token":
                     token = llm_data.get("token", "")
                     current_response += token
+                    session.current_llm_response = current_response
 
                     # Broadcast the streaming token
                     await manager.broadcast({
@@ -188,6 +250,15 @@ async def llm_worker(llm_queue: asyncio.Queue):
                         "is_streaming": True
                     })
                 elif llm_data.get("type") == "llm_complete":
+                    if current_response.strip():
+                        session.record_history_event({
+                            "type": "llm_hint",
+                            "speaker": "llm",
+                            "text": current_response.strip(),
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "is_streaming": False,
+                        })
+
                     # Signal completion
                     await manager.broadcast({
                         "type": "llm_hint",
@@ -196,6 +267,7 @@ async def llm_worker(llm_queue: asyncio.Queue):
                         "complete": True
                     })
                     current_response = ""
+                    session.current_llm_response = ""
 
         except Exception as e:
             print(f"[ERROR] LLM worker error: {e}")
@@ -205,6 +277,8 @@ async def llm_worker(llm_queue: asyncio.Queue):
 @app.on_event("startup")
 async def startup_event():
     """Initialize background workers"""
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
     transcript_queue = asyncio.Queue()
     llm_queue = asyncio.Queue()
 
@@ -293,6 +367,45 @@ async def get_audio_devices():
             "speakers": [],
             "error": str(e)
         }
+
+
+@app.get("/api/sessions")
+async def list_sessions():
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    sessions = []
+    for session_file in sorted(SESSIONS_DIR.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True):
+        try:
+            with session_file.open("r", encoding="utf-8") as file_handle:
+                payload = json.load(file_handle)
+
+            sessions.append({
+                "filename": session_file.name,
+                "date": payload.get("created_at") or datetime.fromtimestamp(session_file.stat().st_mtime).isoformat(),
+                "duration_seconds": payload.get("duration_seconds", 0),
+                "talk_ratio": payload.get("talk_ratio", 0),
+            })
+        except Exception as e:
+            print(f"[WARNING] Failed to load session summary {session_file.name}: {e}")
+
+    return {"success": True, "sessions": sessions}
+
+
+@app.get("/api/sessions/{filename}")
+async def get_session(filename: str):
+    safe_filename = Path(filename).name
+    if safe_filename != filename or not safe_filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Invalid session filename")
+
+    session_path = SESSIONS_DIR / safe_filename
+    if not session_path.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    with session_path.open("r", encoding="utf-8") as file_handle:
+        payload = json.load(file_handle)
+
+    payload["filename"] = safe_filename
+    return {"success": True, "session": payload}
 
 
 @app.post("/api/upload_context")
@@ -431,11 +544,17 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif action == "stop_interview":
                 session.stop()
+                saved_session = session.save_session()
                 await manager.send_json(websocket, {
                     "type": "response",
                     "action": "stop_interview",
                     "status": "stopped",
-                    "message": "Interview session stopped"
+                    "message": "Interview session stopped",
+                    "session": {
+                        "filename": saved_session.get("filename"),
+                        "date": saved_session.get("created_at"),
+                        "duration_seconds": saved_session.get("duration_seconds"),
+                    }
                 })
 
             elif action == "freeze":
