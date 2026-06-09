@@ -48,6 +48,13 @@ class LLMClient:
         """
         Dynamically builds the system prompt based on the selected AI persona.
         """
+        context_handling_rule = (
+            "\n\nCONTEXT HANDLING RULE: You are receiving input from a Live Speech-to-Text tool. "
+            "Natural pauses mean a single question might be split across multiple messages. "
+            "Do not treat every message as a standalone question. Analyze the current input against previous history. "
+            "If it's a fragment or continuation, logically merge it with the previous context to provide one cohesive response."
+        )
+
         if self.persona == "Interview Copilot":
             base_prompt = (
                 "You are an expert IT professional assisting the user with a real-time technical interview. "
@@ -71,30 +78,35 @@ class LLMClient:
             )
 
         context_str = self.context if self.context else "[No context provided]"
-        return f"{base_prompt}\n\nCONTEXT (User's Background):\n{context_str}"
+        return f"{base_prompt}{context_handling_rule}\n\nCONTEXT (User's Background):\n{context_str}"
 
     def _trim_history(self):
         """Keep only the most recent conversation messages to prevent token overflow."""
         if len(self.history) > self.max_history_messages:
             self.history = self.history[-self.max_history_messages:]
 
-    def _build_messages(self, interviewer_question: str):
+    def _build_messages(self):
         """Always include the system prompt and only the last 10 history messages."""
         recent_history = self.history[-self.max_history_messages:]
         return [
             {'role': 'system', 'content': self.system_prompt}
-        ] + recent_history + [
-            {'role': 'user', 'content': interviewer_question}
-        ]
+        ] + recent_history
 
     async def get_suggestion(self, interviewer_question: str) -> AsyncGenerator[str, None]:
         """Stream AI suggestions token by token"""
-        if not interviewer_question or len(interviewer_question.strip()) < 10:
+        if not interviewer_question or not interviewer_question.strip():
             return
+
+        # Logically merge fragments: if the last message was from the user, append to it.
+        # This happens if the previous suggestion task was cancelled by a newer fragment.
+        if self.history and self.history[-1]['role'] == 'user':
+            self.history[-1]['content'] += " " + interviewer_question
+        else:
+            self.history.append({'role': 'user', 'content': interviewer_question})
 
         try:
             clear_sent = False
-            messages = self._build_messages(interviewer_question)
+            messages = self._build_messages()
 
             stream = await self.client.chat.completions.create(
                 model=self.model_name,
@@ -128,8 +140,7 @@ class LLMClient:
 
                     yield token
 
-            # Save to conversation history
-            self.history.append({'role': 'user', 'content': interviewer_question})
+            # Save assistant response to conversation history
             self.history.append({'role': 'assistant', 'content': full_response})
             self._trim_history()
 
@@ -148,11 +159,16 @@ class LLMClient:
 
     async def get_suggestion_sync(self, interviewer_question: str) -> str:
         """Non-streaming fallback method (for testing or error recovery)"""
-        if not interviewer_question or len(interviewer_question.strip()) < 10:
+        if not interviewer_question or not interviewer_question.strip():
             return ""
 
+        if self.history and self.history[-1]['role'] == 'user':
+            self.history[-1]['content'] += " " + interviewer_question
+        else:
+            self.history.append({'role': 'user', 'content': interviewer_question})
+
         try:
-            messages = self._build_messages(interviewer_question)
+            messages = self._build_messages()
 
             response = await self.client.chat.completions.create(
                 model=self.model_name,
@@ -164,8 +180,7 @@ class LLMClient:
 
             full_response = response.choices[0].message.content
 
-            # Save to conversation history
-            self.history.append({'role': 'user', 'content': interviewer_question})
+            # Save assistant response to conversation history
             self.history.append({'role': 'assistant', 'content': full_response})
             self._trim_history()
 

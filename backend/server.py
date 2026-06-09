@@ -88,6 +88,29 @@ class InterviewSession:
         talk_time_seconds = self._calculate_talk_time_seconds()
         talk_ratio = round((talk_time_seconds / duration_seconds) if duration_seconds else 0.0, 3)
 
+        # Structure history as Q&A pairs
+        structured_history = []
+        current_qa = None
+        qa_counter = 1
+
+        for event in self.history_log:
+            if event.get("type") == "transcript":
+                if current_qa:
+                    structured_history.append(current_qa)
+                
+                current_qa = {
+                    "id": qa_counter,
+                    "timestamp": event.get("timestamp"),
+                    "question": f"{event.get('speaker')}: {event.get('text')}",
+                    "answer": ""
+                }
+                qa_counter += 1
+            elif event.get("type") == "llm_hint" and current_qa:
+                current_qa["answer"] = event.get("text", "")
+        
+        if current_qa:
+            structured_history.append(current_qa)
+
         return {
             "session_id": started_at.strftime("session_%Y%m%d_%H%M%S"),
             "created_at": started_at.isoformat(),
@@ -97,7 +120,8 @@ class InterviewSession:
             "talk_ratio": talk_ratio,
             "persona": getattr(self.llm_client, "persona", None),
             "context": getattr(self.llm_client, "context", ""),
-            "history_log": self.history_log,
+            "history": structured_history,
+            "raw_history_log": self.history_log,
         }
 
     def save_session(self) -> dict:
@@ -232,7 +256,7 @@ async def transcript_worker(transcript_queue: asyncio.Queue):
                 # Trigger LLM processing for new transcript
                 if transcript_data.get("type") == "transcript":
                     text = transcript_data.get("text", "")
-                    if len(text) >= 10:
+                    if text.strip():
                         session.process_llm_for_transcript(text)
 
         except Exception as e:

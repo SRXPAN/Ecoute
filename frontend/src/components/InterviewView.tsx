@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react';
-import { Pause, Play, X, Snowflake, EyeOff, Eye } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Pause, Play, X, Snowflake, EyeOff, Eye, Clock, MessageSquare, Sparkles } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import ReactMarkdown from 'react-markdown';
+import { InterviewSession } from '../App';
 
 interface InterviewViewProps {
   onEndSession: () => void;
   onFreeze: () => void;
   onUnfreeze: () => void;
   isFrozen: boolean;
-  transcript: string;
-  llmHint: string;
+  sessions: InterviewSession[];
+  currentSessionId: string | null;
   isSpeakingTooFast: boolean;
   sendMessage?: (message: any) => void;
   initialPersona?: string;
@@ -20,8 +21,8 @@ export const InterviewView = ({
   onFreeze,
   onUnfreeze,
   isFrozen,
-  transcript,
-  llmHint,
+  sessions,
+  currentSessionId,
   isSpeakingTooFast,
   sendMessage,
   initialPersona = 'Short Bullets',
@@ -30,6 +31,18 @@ export const InterviewView = ({
   const [stealthStatus, setStealthStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [showSpeakSlower, setShowSpeakSlower] = useState(false);
   const [activePersona, setActivePersona] = useState(initialPersona);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+
+  // Automatically select the latest session when it changes
+  useEffect(() => {
+    if (sessions.length > 0 && (!selectedSessionId || selectedSessionId === sessions[1]?.id)) {
+      setSelectedSessionId(sessions[0].id);
+    }
+  }, [sessions, selectedSessionId]);
+
+  const selectedSession = useMemo(() => {
+    return sessions.find(s => s.id === selectedSessionId) || sessions[0];
+  }, [sessions, selectedSessionId]);
 
   useEffect(() => {
     if (!isSpeakingTooFast) {
@@ -43,7 +56,6 @@ export const InterviewView = ({
 
     return () => window.clearTimeout(timeout);
   }, [isSpeakingTooFast]);
-
 
   const handleFreezeToggle = () => {
     if (isFrozen) {
@@ -75,9 +87,9 @@ export const InterviewView = ({
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-900 text-slate-100">
+    <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden">
       {/* Header */}
-      <div className="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
+      <div className="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
           <span className="font-semibold">Copilot Active</span>
@@ -110,7 +122,7 @@ export const InterviewView = ({
       </div>
 
       {showSpeakSlower && (
-        <div className="mx-6 mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/15 px-4 py-3 text-amber-100 shadow-[0_0_40px_rgba(251,191,36,0.12)] backdrop-blur-sm">
+        <div className="mx-6 mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/15 px-4 py-3 text-amber-100 shadow-[0_0_40px_rgba(251,191,36,0.12)] backdrop-blur-sm shrink-0">
           <div className="flex items-center justify-center gap-2 font-semibold tracking-wide">
             <span className="text-lg">⏳</span>
             <span>Speak Slower!</span>
@@ -121,56 +133,107 @@ export const InterviewView = ({
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex flex-col gap-4 p-6">
-        {/* Transcript Section */}
-        <div className="flex-1 bg-slate-800 rounded-lg border border-slate-700 p-4 overflow-y-auto">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-slate-300 text-sm uppercase tracking-wide">
-              Live Transcript
+      {/* Main Content Area: Sidebar + Active View */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar: Session History */}
+        <div className="w-64 bg-slate-800/50 border-r border-slate-700 flex flex-col shrink-0">
+          <div className="p-4 border-b border-slate-700">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+              <Clock size={14} /> History
             </h3>
           </div>
-          <div className="text-slate-100 leading-relaxed whitespace-pre-wrap">
-            {transcript || (
-              <p className="text-slate-500 italic">Waiting for audio input...</p>
+          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            {sessions.length === 0 ? (
+              <p className="text-slate-600 text-xs text-center mt-8 italic">No entries yet</p>
+            ) : (
+              sessions.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => setSelectedSessionId(session.id)}
+                  className={`w-full text-left p-3 rounded-xl transition-all border ${
+                    selectedSessionId === session.id
+                      ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-100'
+                      : 'border-transparent hover:bg-slate-700/50 text-slate-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-mono opacity-60">
+                      {new Date(session.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                    {session.id === currentSessionId && (
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></span>
+                    )}
+                  </div>
+                  <p className="text-xs font-medium truncate leading-relaxed">
+                    {session.transcript.replace(/^(Interviewer|Me): /, '')}
+                  </p>
+                </button>
+              ))
             )}
           </div>
         </div>
 
-        {/* AI Hints Section */}
-        <div className="flex-1 rounded-xl border border-indigo-500/40 bg-slate-800 p-4 shadow-lg shadow-indigo-950/20 overflow-y-auto">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-300">
-                Current Active Hint
-              </h3>
-              <div className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></div>
+        {/* Active Session Content */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/50 p-6 gap-6">
+          {selectedSession ? (
+            <>
+              {/* Transcript Section */}
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex items-center gap-2 mb-3">
+                  <MessageSquare size={16} className="text-slate-400" />
+                  <h3 className="font-bold text-slate-400 text-xs uppercase tracking-widest">
+                    Transcript
+                  </h3>
+                </div>
+                <div className="flex-1 bg-slate-800/80 rounded-2xl border border-slate-700 p-5 overflow-y-auto shadow-inner">
+                  <p className="text-slate-100 leading-relaxed whitespace-pre-wrap text-sm">
+                    {selectedSession.transcript}
+                  </p>
+                </div>
+              </div>
+
+              {/* AI Hint Section */}
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={16} className="text-indigo-400" />
+                    <h3 className="font-bold text-indigo-400 text-xs uppercase tracking-widest">
+                      AI Suggestion
+                    </h3>
+                  </div>
+                  {selectedSession.id === currentSessionId && !selectedSession.isComplete && (
+                    <span className="text-[10px] text-indigo-400 animate-pulse font-bold tracking-tighter">GENERATING...</span>
+                  )}
+                </div>
+                <div className="flex-1 rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-5 shadow-lg shadow-indigo-950/20 overflow-y-auto">
+                  <div className="text-slate-100 leading-relaxed">
+                    {selectedSession.aiResponse ? (
+                      <ReactMarkdown className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-li:my-1">
+                        {selectedSession.aiResponse}
+                      </ReactMarkdown>
+                    ) : (
+                      <p className="text-slate-600 italic text-sm">Waiting for response...</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-500 gap-4 opacity-50">
+              <MessageSquare size={48} strokeWidth={1} />
+              <p className="text-sm font-medium">Waiting for conversation to start...</p>
             </div>
-            {isFrozen && (
-              <span className="inline-flex items-center rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-sky-200">
-                ❄️ Frozen
-              </span>
-            )}
-          </div>
-          <div className="text-slate-100 leading-relaxed rounded-lg bg-slate-900/60 border border-slate-700/60 p-3">
-            {llmHint ? (
-              <ReactMarkdown className="prose prose-invert prose-sm max-w-none">
-                {llmHint}
-              </ReactMarkdown>
-            ) : (
-              <p className="text-slate-500 italic">AI suggestions will appear here...</p>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
       {/* Quick Actions Bottom Bar */}
-      <div className="bg-slate-800 border-t border-slate-700 px-6 py-4 flex items-center justify-center gap-4">
+      <div className="bg-slate-800/80 backdrop-blur-md border-t border-slate-700 px-6 py-4 flex items-center justify-center gap-4 shrink-0">
         <button
           onClick={handleFreezeToggle}
-          className={`flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors ${
+          className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
             isFrozen
-              ? 'bg-blue-600 hover:bg-blue-700 text-white'
+              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-900/20'
               : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
           }`}
         >
@@ -180,7 +243,7 @@ export const InterviewView = ({
 
         <button
           onClick={onEndSession}
-          className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+          className="flex items-center gap-2 px-6 py-3 bg-red-600/90 hover:bg-red-600 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-900/20"
         >
           <X size={20} />
           End Session
@@ -189,14 +252,14 @@ export const InterviewView = ({
 
       {/* Stealth Status Notification */}
       {stealthStatus !== 'idle' && (
-        <div className={`fixed bottom-20 right-6 px-4 py-2 rounded-lg text-sm font-semibold ${
+        <div className={`fixed bottom-24 right-8 px-5 py-2.5 rounded-xl text-sm font-bold shadow-2xl transition-all animate-in slide-in-from-bottom-4 duration-300 ${
           stealthStatus === 'success'
-            ? 'bg-green-600 text-white'
-            : 'bg-red-600 text-white'
+            ? 'bg-green-600 text-white border border-green-500/50'
+            : 'bg-red-600 text-white border border-red-500/50'
         }`}>
           {stealthStatus === 'success'
             ? (isStealthEnabled ? 'Stealth Mode Enabled' : 'Stealth Mode Disabled')
-            : 'Stealth Mode Not Supported (Windows only)'}
+            : 'Stealth Mode Not Supported'}
         </div>
       )}
     </div>

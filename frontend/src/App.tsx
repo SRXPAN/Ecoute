@@ -4,11 +4,19 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { SetupView } from './components/SetupView';
 import { InterviewView } from './components/InterviewView';
 
+export interface InterviewSession {
+  id: string;
+  transcript: string;
+  aiResponse: string;
+  timestamp: string;
+  isComplete: boolean;
+}
+
 function App() {
   const [isInterviewActive, setIsInterviewActive] = useState(false);
   const [isFrozen, setIsFrozen] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [llmHint, setLlmHint] = useState('');
+  const [sessions, setSessions] = useState<InterviewSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isSpeakingTooFast, setIsSpeakingTooFast] = useState(false);
   const fastSpeechTimeoutRef = useRef<number | null>(null);
   const processedMessagesRef = useRef<Set<string>>(new Set());
@@ -20,7 +28,7 @@ function App() {
         const appWindow = getCurrentWindow();
         if (isInterviewActive) {
           // Compact mode for interview
-          await appWindow.setSize(new LogicalSize(450, 800));
+          await appWindow.setSize(new LogicalSize(1000, 800));
         } else {
           // Large mode for setup
           await appWindow.setSize(new LogicalSize(1000, 800));
@@ -46,10 +54,19 @@ function App() {
         }
         processedMessagesRef.current.add(messageId);
 
-        setTranscript((prev) => {
-          const newText = `${message.speaker}: ${message.text}\n\n`;
-          return newText + prev;
-        });
+        const newSessionId = `session-${message.timestamp}`;
+        setCurrentSessionId(newSessionId);
+        
+        setSessions((prev) => [
+          {
+            id: newSessionId,
+            transcript: `${message.speaker}: ${message.text}`,
+            aiResponse: '',
+            timestamp: message.timestamp,
+            isComplete: false,
+          },
+          ...prev,
+        ]);
 
         if (message.is_speaking_too_fast) {
           setIsSpeakingTooFast(true);
@@ -66,13 +83,26 @@ function App() {
         break;
 
       case 'llm_hint':
-        if (message.clear) {
-          setLlmHint('');
-        } else if (message.is_streaming) {
-          setLlmHint((prev) => prev + message.text);
-        } else if (message.complete) {
-          // Optionally clear or mark completion
-        }
+        setSessions((prev) => {
+          if (prev.length === 0) return prev;
+          
+          const newSessions = [...prev];
+          // We always update the latest (first in our array) session for hints
+          const activeIndex = 0; 
+          
+          if (message.clear) {
+            newSessions[activeIndex] = { ...newSessions[activeIndex], aiResponse: '' };
+          } else if (message.is_streaming) {
+            newSessions[activeIndex] = { 
+              ...newSessions[activeIndex], 
+              aiResponse: newSessions[activeIndex].aiResponse + message.text 
+            };
+          } else if (message.complete) {
+            newSessions[activeIndex] = { ...newSessions[activeIndex], isComplete: true };
+          }
+          
+          return newSessions;
+        });
         break;
 
       case 'response':
@@ -112,8 +142,8 @@ function App() {
     
     // Reset session state
     processedMessagesRef.current.clear();
-    setTranscript('');
-    setLlmHint('');
+    setSessions([]);
+    setCurrentSessionId(null);
     setIsSpeakingTooFast(false);
 
     sendMessage({
@@ -131,8 +161,8 @@ function App() {
     sendMessage({ action: 'stop_interview' });
     setIsInterviewActive(false);
     setIsFrozen(false);
-    setTranscript('');
-    setLlmHint('');
+    setSessions([]);
+    setCurrentSessionId(null);
     setIsSpeakingTooFast(false);
 
     if (fastSpeechTimeoutRef.current) {
@@ -188,8 +218,8 @@ function App() {
           onFreeze={handleFreeze}
           onUnfreeze={handleUnfreeze}
           isFrozen={isFrozen}
-          transcript={transcript}
-          llmHint={llmHint}
+          sessions={sessions}
+          currentSessionId={currentSessionId}
           isSpeakingTooFast={isSpeakingTooFast}
           sendMessage={sendMessage}
           initialPersona={initialPersona}

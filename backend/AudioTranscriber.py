@@ -9,7 +9,7 @@ from collections import deque
 import asyncio
 import webrtcvad
 
-PHRASE_TIMEOUT = 1.0
+PHRASE_TIMEOUT = 3.0
 MAX_PHRASES = 10
 MAX_PHRASE_DURATION = 8.0
 MIC_SILENCE_THRESHOLD = 500
