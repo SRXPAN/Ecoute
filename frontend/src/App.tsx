@@ -19,64 +19,15 @@ function App() {
   const [historyEntries, setHistoryEntries] = useState<InterviewHistoryEntry[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<number | null>(null);
   const [isSpeakingTooFast, setIsSpeakingTooFast] = useState(false);
+  const [initialPersona, setInitialPersona] = useState<string>('Short Bullets');
+  
   const fastSpeechTimeoutRef = useRef<number | null>(null);
   const processedMessagesRef = useRef<Set<string>>(new Set());
   const activeHistoryIdRef = useRef<number | null>(null);
 
-  // Global Shortcut for Push-to-Talk
-  useEffect(() => {
-    const setupShortcut = async () => {
-      try {
-        await unregisterAll();
-        await register('CommandOrControl+Alt', (event) => {
-          if (event.state === 'Pressed') {
-            console.log('[Shortcut] PTT Pressed');
-            sendMessage({ action: 'toggle_mic', state: true });
-          } else if (event.state === 'Released') {
-            console.log('[Shortcut] PTT Released');
-            sendMessage({ action: 'toggle_mic', state: false });
-          }
-        });
-        console.log('[Shortcut] CommandOrControl+Alt registered');
-      } catch (error) {
-        console.error('[Shortcut] Registration failed:', error);
-      }
-    };
-
-    if (isInterviewActive) {
-      setupShortcut();
-    } else {
-      unregisterAll();
-    }
-
-    return () => {
-      unregisterAll();
-    };
-  }, [isInterviewActive, sendMessage]);
-
   useEffect(() => {
     activeHistoryIdRef.current = activeHistoryId;
   }, [activeHistoryId]);
-
-  // Handle window resizing based on mode
-  useEffect(() => {
-    const resizeWindow = async () => {
-      try {
-        const appWindow = getCurrentWindow();
-        if (isInterviewActive) {
-          // Compact mode for interview
-          await appWindow.setSize(new LogicalSize(1000, 800));
-        } else {
-          // Large mode for setup
-          await appWindow.setSize(new LogicalSize(1000, 800));
-        }
-      } catch (error) {
-        console.error('Failed to resize window:', error);
-      }
-    };
-
-    resizeWindow();
-  }, [isInterviewActive]);
 
   const handleWebSocketMessage = useCallback((message: any) => {
     console.log('[App] Received message:', message);
@@ -176,7 +127,56 @@ function App() {
 
   const { connectionStatus, sendMessage } = useWebSocket(handleWebSocketMessage);
 
-  const [initialPersona, setInitialPersona] = useState('Short Bullets');
+  // Global Shortcut for Push-to-Talk
+  useEffect(() => {
+    const setupShortcut = async () => {
+      try {
+        await unregisterAll();
+        await register('CommandOrControl+Alt', (event) => {
+          if (event.state === 'Pressed') {
+            console.log('[Shortcut] PTT Pressed');
+            sendMessage({ action: 'toggle_mic', state: true });
+          } else if (event.state === 'Released') {
+            console.log('[Shortcut] PTT Released');
+            sendMessage({ action: 'toggle_mic', state: false });
+          }
+        });
+        console.log('[Shortcut] CommandOrControl+Alt registered');
+      } catch (error) {
+        console.error('[Shortcut] Registration failed:', error);
+      }
+    };
+
+    if (isInterviewActive) {
+      setupShortcut();
+    } else {
+      unregisterAll();
+    }
+
+    return () => {
+      unregisterAll();
+    };
+  }, [isInterviewActive, sendMessage]);
+
+  // Handle window resizing based on mode
+  useEffect(() => {
+    const resizeWindow = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        if (isInterviewActive) {
+          // Compact mode for interview
+          await appWindow.setSize(new LogicalSize(1000, 800));
+        } else {
+          // Large mode for setup
+          await appWindow.setSize(new LogicalSize(1000, 800));
+        }
+      } catch (error) {
+        console.error('Failed to resize window:', error);
+      }
+    };
+
+    resizeWindow();
+  }, [isInterviewActive]);
 
   const handleStartInterview = (config: any) => {
     console.log('[App] Starting interview with config:', config);

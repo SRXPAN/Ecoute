@@ -22,7 +22,7 @@ class LLMClient:
         self.context = ""
         self.system_prompt = self._build_system_prompt()
         self.history = []
-        self.max_history_messages = 10
+        self.max_history_messages = 4
 
         self.client = AsyncOpenAI(
             base_url="http://127.0.0.1:1234/v1",
