@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup  # pyright: ignore[reportMissingImports]
 from AudioRecorder import SpeakerRecorder, MicRecorder
 from AudioTranscriber import AudioTranscriber
 from LLMClient import LLMClient
-import threading
+import asyncio
 import PyPDF2
 import io
 import pyaudiowpatch as pyaudio
@@ -65,12 +65,11 @@ class InterviewSession:
         self.loop = None
         self.is_running = False
         self.is_frozen = False
-        self.worker_tasks = []
         self.history_log = []
         self.session_started_at = None
         self.session_ended_at = None
         self.current_llm_response = ""
-        self._llm_cancel_event = None
+        self._llm_task = None
 
     def record_history_event(self, event: dict):
         self.history_log.append(event)
@@ -139,8 +138,7 @@ class InterviewSession:
         self.llm_client = LLMClient(
             provider="local",
             persona=persona,
-            llm_queue=llm_queue,
-            loop=loop
+            llm_queue=llm_queue
         )
 
         # Apply user context
@@ -181,27 +179,22 @@ class InterviewSession:
         print("[INFO] Interview session unfrozen")
 
     def process_llm_for_transcript(self, transcript_text: str):
-        """Process transcript through LLM, cancelling any active generation"""
-        # 1. Cancel existing generation if it's running
-        if getattr(self, '_llm_cancel_event', None):
-            self._llm_cancel_event.set()
+        """Process transcript through LLM using asyncio Tasks and proper cancellation"""
+        # 1. Cancel the currently running LLM task if it exists
+        if self._llm_task and not self._llm_task.done():
+            self._llm_task.cancel()
 
-        # 2. Create a fresh cancel event for the new thread
-        self._llm_cancel_event = threading.Event()
-
-        def _run_llm(cancel_event):
+        async def _run_llm_async():
             try:
-                for token in self.llm_client.get_suggestion(transcript_text, cancel_event=cancel_event):
-                    # Double check if cancelled from the outside
-                    if cancel_event.is_set():
-                        break
-                    if not self.is_frozen:
-                        pass  # Tokens are already being pushed to queue
+                async for token in self.llm_client.get_suggestion(transcript_text):
+                    pass  # Tokens are pushed to the queue inside get_suggestion
+            except asyncio.CancelledError:
+                print("[INFO] LLM task cancelled by a newer request.")
             except Exception as e:
                 print(f"[ERROR] LLM processing failed: {e}")
 
-        thread = threading.Thread(target=_run_llm, args=(self._llm_cancel_event,), daemon=True)
-        thread.start()
+        # 2. Spawn the new async task
+        self._llm_task = asyncio.create_task(_run_llm_async())
 
     def cleanup(self):
         """Clean up resources"""

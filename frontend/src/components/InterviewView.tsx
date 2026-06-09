@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pause, Play, X, Snowflake, EyeOff, Eye } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import ReactMarkdown from 'react-markdown';
 
 interface InterviewViewProps {
   onEndSession: () => void;
@@ -151,9 +152,11 @@ export const InterviewView = ({
               </span>
             )}
           </div>
-          <div className="text-slate-100 leading-relaxed whitespace-pre-wrap rounded-lg bg-slate-900/60 border border-slate-700/60 p-3">
+          <div className="text-slate-100 leading-relaxed rounded-lg bg-slate-900/60 border border-slate-700/60 p-3">
             {llmHint ? (
-              <span>{llmHint}</span>
+              <ReactMarkdown className="prose prose-invert prose-sm max-w-none">
+                {llmHint}
+              </ReactMarkdown>
             ) : (
               <p className="text-slate-500 italic">AI suggestions will appear here...</p>
             )}

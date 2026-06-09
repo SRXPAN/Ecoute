@@ -1,7 +1,8 @@
 import os
-from typing import Generator
+from typing import AsyncGenerator
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
+import asyncio
 
 load_dotenv()
 
@@ -13,18 +14,17 @@ class LLMClient:
     GUI-independent version with queue support.
     """
 
-    def __init__(self, provider: str = "local", persona: str = "Short Bullets", llm_queue=None, loop=None):
+    def __init__(self, provider: str = "local", persona: str = "Short Bullets", llm_queue=None):
         self.provider = provider.lower()
         self.persona = persona
         self.llm_queue = llm_queue  # asyncio.Queue for streaming output
-        self.loop = loop
         self.model_name = 'local-model'
         self.context = self._load_interview_context()
         self.system_prompt = self._build_system_prompt()
         self.history = []
         self.max_history_messages = 10
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             base_url="http://127.0.0.1:1234/v1",
             api_key="lm-studio"
         )
@@ -87,7 +87,7 @@ class LLMClient:
             {'role': 'user', 'content': interviewer_question}
         ]
 
-    def get_suggestion(self, interviewer_question: str, cancel_event=None) -> Generator[str, None, None]:
+    async def get_suggestion(self, interviewer_question: str) -> AsyncGenerator[str, None]:
         """Stream AI suggestions token by token"""
         if not interviewer_question or len(interviewer_question.strip()) < 10:
             return
@@ -96,7 +96,7 @@ class LLMClient:
             clear_sent = False
             messages = self._build_messages(interviewer_question)
 
-            stream = self.client.chat.completions.create(
+            stream = await self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
                 stream=True,
@@ -105,25 +105,17 @@ class LLMClient:
             )
 
             full_response = ""
-            for chunk in stream:
-                # IMMEDIATELY ABORT IF A NEWER REQUEST CANCELLED THIS ONE
-                if cancel_event and cancel_event.is_set():
-                    print("[INFO] LLM stream cancelled by a newer request.")
-                    break
-
+            async for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
                     token = chunk.choices[0].delta.content
 
-                    if not clear_sent and self.llm_queue and self.loop:
+                    if not clear_sent and self.llm_queue:
                         try:
-                            self.loop.call_soon_threadsafe(
-                                self.llm_queue.put_nowait,
-                                {
-                                    "type": "llm_hint",
-                                    "text": "",
-                                    "clear": True
-                                }
-                            )
+                            self.llm_queue.put_nowait({
+                                "type": "llm_hint",
+                                "text": "",
+                                "clear": True
+                            })
                             clear_sent = True
                         except Exception as e:
                             print(f"[WARNING] Failed to push LLM clear signal to queue: {e}")
@@ -131,15 +123,12 @@ class LLMClient:
                     full_response += token
 
                     # Push to async queue if available
-                    if self.llm_queue and self.loop:
+                    if self.llm_queue:
                         try:
-                            self.loop.call_soon_threadsafe(
-                                self.llm_queue.put_nowait,
-                                {
-                                    "type": "llm_token",
-                                    "token": token
-                                }
-                            )
+                            self.llm_queue.put_nowait({
+                                "type": "llm_token",
+                                "token": token
+                            })
                         except Exception as e:
                             print(f"[WARNING] Failed to push LLM token to queue: {e}")
 
@@ -150,12 +139,23 @@ class LLMClient:
             self.history.append({'role': 'assistant', 'content': full_response})
             self._trim_history()
 
+            # Signal completion
+            if self.llm_queue:
+                try:
+                    self.llm_queue.put_nowait({
+                        "type": "llm_complete"
+                    })
+                except Exception as e:
+                    print(f"[WARNING] Failed to push LLM completion signal to queue: {e}")
+
+        except asyncio.CancelledError:
+            print("[INFO] LLM stream cancelled by a newer request.")
+            raise
         except Exception as e:
             print(f"[ERROR] Local LM Studio streaming failed: {e}")
             print(f"[ERROR] Make sure LM Studio server is running at http://127.0.0.1:1234")
-            yield ""
 
-    def get_suggestion_sync(self, interviewer_question: str) -> str:
+    async def get_suggestion_sync(self, interviewer_question: str) -> str:
         """Non-streaming fallback method (for testing or error recovery)"""
         if not interviewer_question or len(interviewer_question.strip()) < 10:
             return ""
@@ -163,11 +163,11 @@ class LLMClient:
         try:
             messages = self._build_messages(interviewer_question)
 
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
                 stream=False,
-                max_tokens=600,
+                max_tokens=200,
                 temperature=0.3
             )
 

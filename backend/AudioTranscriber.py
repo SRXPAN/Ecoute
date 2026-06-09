@@ -7,11 +7,11 @@ import keyboard
 from groq import Groq
 from collections import deque
 import asyncio
+import webrtcvad
 
 PHRASE_TIMEOUT = 1.0
 MAX_PHRASES = 10
 MAX_PHRASE_DURATION = 8.0
-RMS_THRESHOLD = 30
 MIC_SILENCE_THRESHOLD = 500
 
 class AudioTranscriber:
@@ -37,6 +37,15 @@ class AudioTranscriber:
             "Me": {"data": b"", "last_audio_time": None, "start_time": None, "is_processing": False}
         }
 
+        # WebRTC VAD initialization (aggressiveness level 3 = most aggressive)
+        self.vad = webrtcvad.Vad(3)
+
+        # VAD frame buffers (30ms chunks per source)
+        self.vad_buffers = {
+            "Interviewer": b"",
+            "Me": b""
+        }
+
         self.current_status = {
             "Interviewer": "🟢 Idle",
             "Me": "🟢 Idle"
@@ -44,7 +53,7 @@ class AudioTranscriber:
 
         self.is_running = False
         self.is_paused = False
-        print(f"[INFO] Groq-based audio transcriber initialized (Speaker + {'Mic' if mic_recorder else 'No Mic'})")
+        print(f"[INFO] Groq-based audio transcriber initialized with WebRTC VAD (Speaker + {'Mic' if mic_recorder else 'No Mic'})")
 
     def _is_push_to_talk_active(self) -> bool:
         """Require Ctrl + Alt to be held before we process microphone audio."""
@@ -55,16 +64,40 @@ class AudioTranscriber:
             # transcribe background noise or accidental keystrokes.
             return False
 
-    def _calculate_rms(self, audio_data: bytes) -> float:
-        """Compute RMS volume for an int16 PCM audio buffer."""
+    def _is_speech_detected(self, audio_data: bytes, sample_rate: int, source_name: str) -> bool:
+        """
+        Use WebRTC VAD to detect speech in audio chunks.
+        VAD requires exact frame sizes: 10ms, 20ms, or 30ms at 8000, 16000, 32000, or 48000 Hz.
+        We buffer incoming audio and process it in 30ms frames.
+        """
         if not audio_data:
-            return 0.0
+            return False
 
-        audio_np = np.frombuffer(audio_data, dtype=np.int16)
-        if audio_np.size == 0:
-            return 0.0
+        # Add incoming audio to the VAD buffer
+        self.vad_buffers[source_name] += audio_data
 
-        return float(np.sqrt(np.mean(audio_np.astype(np.float32) ** 2)))
+        # Calculate frame size for 30ms at the given sample rate
+        # Frame size = (sample_rate * 30ms) * 2 bytes per sample (int16)
+        frame_duration_ms = 30
+        frame_size = int((sample_rate / 1000) * frame_duration_ms * 2)
+
+        speech_detected = False
+
+        # Process complete 30ms frames
+        while len(self.vad_buffers[source_name]) >= frame_size:
+            frame = self.vad_buffers[source_name][:frame_size]
+            self.vad_buffers[source_name] = self.vad_buffers[source_name][frame_size:]
+
+            try:
+                if self.vad.is_speech(frame, sample_rate):
+                    speech_detected = True
+            except Exception as e:
+                print(f"[WARNING] VAD processing failed for {source_name}: {e}")
+                # Fallback: assume speech if we can't process
+                speech_detected = True
+                break
+
+        return speech_detected
 
     def start(self):
         if self.is_running: return
@@ -114,21 +147,28 @@ class AudioTranscriber:
                             buffer_info["data"] = b""
                             buffer_info["last_audio_time"] = None
                             buffer_info["start_time"] = None
+                        self.vad_buffers[source_name] = b""
                         self.current_status[source_name] = "🟢 Idle"
                         time.sleep(0.02)
                         continue
 
-                    rms = self._calculate_rms(audio_data)
+                    # Get sample rate from recorder
+                    sample_rate = int(recorder.device_info["defaultSampleRate"])
 
-                    # For microphone input, ignore quiet buffers that are likely
-                    # silence or background noise. This prevents Whisper from
-                    # hallucinating and reduces wasted API usage.
-                    if source_name == "Me" and rms < MIC_SILENCE_THRESHOLD:
-                        if not buffer_info["is_processing"] and not buffer_info["data"]:
-                            self.current_status[source_name] = "🟢 Idle"
-                        continue
+                    # Use WebRTC VAD for speech detection
+                    is_speech = self._is_speech_detected(audio_data, sample_rate, source_name)
 
-                    if rms > RMS_THRESHOLD:
+                    # For microphone input, also check RMS to filter out very quiet audio
+                    if source_name == "Me":
+                        audio_np = np.frombuffer(audio_data, dtype=np.int16) if audio_data else np.array([], dtype=np.int16)
+                        rms = float(np.sqrt(np.mean(audio_np.astype(np.float32) ** 2))) if audio_np.size > 0 else 0.0
+
+                        if rms < MIC_SILENCE_THRESHOLD:
+                            if not buffer_info["is_processing"] and not buffer_info["data"]:
+                                self.current_status[source_name] = "🟢 Idle"
+                            continue
+
+                    if is_speech:
                         self.current_status[source_name] = "🎙️ Recording"
                         if not buffer_info["data"]:
                             buffer_info["start_time"] = timestamp
@@ -170,13 +210,17 @@ class AudioTranscriber:
 
         # Guard the Groq request with a final RMS check for microphone audio.
         # This is the last cheap filter before transcription.
-        if source_name == "Me" and self._calculate_rms(audio_data) < MIC_SILENCE_THRESHOLD:
-            buffer_info["data"] = b""
-            buffer_info["start_time"] = None
-            buffer_info["last_audio_time"] = None
-            buffer_info["is_processing"] = False
-            self.current_status[source_name] = "🟢 Idle"
-            return
+        if source_name == "Me":
+            audio_np = np.frombuffer(audio_data, dtype=np.int16) if audio_data else np.array([], dtype=np.int16)
+            rms = float(np.sqrt(np.mean(audio_np.astype(np.float32) ** 2))) if audio_np.size > 0 else 0.0
+
+            if rms < MIC_SILENCE_THRESHOLD:
+                buffer_info["data"] = b""
+                buffer_info["start_time"] = None
+                buffer_info["last_audio_time"] = None
+                buffer_info["is_processing"] = False
+                self.current_status[source_name] = "🟢 Idle"
+                return
 
         buffer_info["data"] = b""
         buffer_info["start_time"] = None
@@ -284,6 +328,7 @@ class AudioTranscriber:
             self.audio_buffers[source]["data"] = b""
             self.audio_buffers[source]["last_audio_time"] = None
             self.audio_buffers[source]["start_time"] = None
+            self.vad_buffers[source] = b""
         print("[INFO] Transcript data cleared")
 
     def stop(self):
