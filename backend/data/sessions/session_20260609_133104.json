@@ -1,0 +1,32 @@
+{
+  "session_id": "session_20260609_133104",
+  "created_at": "2026-06-09T13:31:04.367350",
+  "ended_at": "2026-06-09T13:32:53.706738",
+  "duration_seconds": 109.34,
+  "talk_time_seconds": 0,
+  "talk_ratio": 0.0,
+  "persona": "Interview Copilot",
+  "context": "Oleksandr  Novokhatskyi  \nJunior Project Manager | Junior Technical Product Manager  \n Poland   novosaki63@gmail.com        +48532536533|  +380632825243  \n  in/oleksandr -novokhatskyi -6253a82b a     github.com/SRXPAN  \n \nSUMMARY  \n \nAnalytical and product -minded professional with a strong technical foundation in Full -Stack and Game Development. Expert in bridging the gap \nbetween technical feasibility and business value. Proven track record of managing full product lifecycles, building  MVPs from scratch, and \ncoordinating cross -functional tasks using Agile methodologies. Passionate about EdTech and AR/VR ecosystems . \n \nEXPERIENCE  \n \nFounder  & Product  Lead  \nE-learning  Platform  (MVP)\n \nOctober  2025 - March  2026, Radom,  Poland  (Hybrid  / Remote)  \n• Product Vision: Personally defined the roadmap and MVP \nscope for a comprehensive web -based learning ecosystem ( e-\nlearn.space ).  \n• Agile Management: Defined release milestones in Jira and \nConfluence, aligning design and development around weekly \ndemos to keep the project on schedule.  \n• Execution : Implemented a React and Node.js portal with \ngamified progress flows and documented all release criteria to \nguide launch readiness.  \n \nProject  Manager  \nIndie  Game  Prototype  (Unreal  Engine  5)\n \nJanuary  2025 - September  2025, Radom,  Poland  (Hybrid  / Remote)  \n• Lifecycle Management: Led the end -to-end development \ncycle of a 3D game prototype, managing scope and Game \nDesign Documents (GDD).  \n  \n \n \n• Team Coordination: Facilitated sprint planning and weekly \nplaytest reviews with designers and developers, converting  \nfindings into prioritized Jira backlog items.  \n• Risk Mitigation: Optimized project scope to meet strict \ndeadlines, balancing high -quality UI/UX standards with \ntechnical constraints to prevent \"blockers\".  \n• Workflow: Organized version control (GitHub/Perforce) and \nCI/CD pipelines to streamline asset integration.  \n \nProduct  Researcher  \nAI Automation  & Security  Tools\n \nJuly 2024 - December  2024, Radom,  Poland  (Hybrid  / Remote)  \n• Requirements  Gathering:  Conducted  feasibility  analysis  and \ntranslated  complex  market  needs  into actionable  technical  \nrequirements.  \n• Stakeholder  Alignment:  Developed  user personas,  journey  \nmaps,  and business  logic for AI-driven  automation  tools. \n• Strategic Reporting: Synthesized interview notes and \ncompetitor findings into ranked opportunity briefs, giving \nengineering and sales a shared view of feature gaps, \ncompliance risks, and launch priorities.\n \n \nEDUCATION  \nSpecialty:  Cybersecurity  \nKyiv National  University  of Economics  (KNEU)  • Kyiv,  Ukraine  • \n06/2022  – Present  \n  \nSpecialty:  Programmer  \nUniversity  of Technology  and Humanities  Kazimierz  Pułaski • \nRadom,  Poland  • 09/2022  – 03/2026  \n \nCERTIFICATIONS  \n \nIntroduction  to Cybersecurity  & IoT \nCisco  Networking  Academy  • 2023  \n \nTECHNICAL SKILLS & COMPETENCIES  \n \nManagement:  Agile/Scrum, SDLC, Backlog Prioritization, Risk Management, Resource  Planning, Project Planning.  \nTools:  Jira, Trello, Confluence, GitLab, GitHub, Slack, Zoom, MS Teams.  \nAnalysis & Design:  Technical Writing, BPMN, Miro, Lucidchart, User Research.  \nTech Stack (Architecture Knowledge):  React, Node.js, SQL (Postgres, MongoDB), Docker, REST API, Unreal Engine 5, C++, C#,  JS. \nEnglish: Proficient (B2) | Polish: Proficient (B2) | Ukrainian/Russian: Native",
+  "history": [
+    {
+      "id": 1,
+      "timestamp": "2026-06-09T13:31:37.155610",
+      "question": "Опишіть життєвий цикл бага – баг лайф сікл.",
+      "answer": ""
+    }
+  ],
+  "raw_history_log": [
+    {
+      "type": "transcript",
+      "speaker": "Interviewer",
+      "text": "Опишіть життєвий цикл бага – баг лайф сікл.",
+      "timestamp": "2026-06-09T13:31:37.155610",
+      "duration_seconds": 3.8,
+      "word_count": 8,
+      "wpm": 126.3,
+      "is_speaking_too_fast": false,
+      "history_id": 1
+    }
+  ],
+  "filename": "session_20260609_133104.json"
+}
