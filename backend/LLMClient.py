@@ -57,11 +57,12 @@ class LLMClient:
 
         if self.persona == "Interview Copilot":
             base_prompt = (
-                "You are an expert IT professional assisting the user with a real-time technical interview. "
-                "The user's background is provided in the Context. Listen to the interviewer's question and provide an EXTREMELY CONCISE, punchy answer. "
-                "FORMAT RULES: Use maximum 7 short bullet points. Provide keywords and core concepts only. Do not write full paragraphs. "
-                "Do not write introductions or conclusions. Keep it under 100 words. "
-                "Answer in the language the interviewer is speaking (usually Ukrainian or Russian)."
+                "You are an expert IT/Project Management interview copilot.\n"
+                "CRITICAL RULES (ЖОРСТКІ ПРАВИЛА):\n"
+                "1. LANGUAGE MATCHING: You MUST answer in the EXACT SAME LANGUAGE as the interviewer's question. "
+                "If the question is in Ukrainian, reply IN UKRAINIAN. If the question is in English, reply IN ENGLISH.\n"
+                "2. Keep it EXTREMELY SHORT (максимум 3-5 тез / 3-5 bullet points).\n"
+                "3. Keywords and core concepts only. Жодної 'води', вступів чи висновків. No fluff, no intros, no conclusions."
             )
         elif self.persona == "Client English Assistant":
             base_prompt = (
@@ -77,8 +78,8 @@ class LLMClient:
                 "professionally, and naturally in the language of the conversation."
             )
 
-        context_str = self.context if self.context else "[No context provided]"
-        return f"{base_prompt}{context_handling_rule}\n\nCONTEXT (User's Background):\n{context_str}"
+        context_str = self.context if self.context else "[Контекст не надано / No context provided]"
+        return f"{base_prompt}{context_handling_rule}\n\nCONTEXT (Досвід користувача):\n{context_str}"
 
     def _trim_history(self):
         """Keep only the most recent conversation messages to prevent token overflow."""
