@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
+from typing import Optional
 import requests
 from bs4 import BeautifulSoup  # pyright: ignore[reportMissingImports]
 from AudioRecorder import SpeakerRecorder, MicRecorder
@@ -66,13 +67,40 @@ class InterviewSession:
         self.is_running = False
         self.is_frozen = False
         self.history_log = []
+        self.history = []
+        self._next_history_id = 1
         self.session_started_at = None
         self.session_ended_at = None
         self.current_llm_response = ""
+        self._active_history_id = None
         self._llm_task = None
 
     def record_history_event(self, event: dict):
         self.history_log.append(event)
+
+    def append_history_question(self, timestamp: str, question: str) -> dict:
+        entry = {
+            "id": self._next_history_id,
+            "timestamp": timestamp,
+            "question": question,
+            "answer": "",
+        }
+        self._next_history_id += 1
+        self.history.append(entry)
+        self._active_history_id = entry["id"]
+        return entry
+
+    def update_history_answer(self, history_id: Optional[int], answer: str):
+        if history_id is None:
+            history_id = self._active_history_id
+
+        if history_id is None:
+            return
+
+        for entry in self.history:
+            if entry.get("id") == history_id:
+                entry["answer"] = answer
+                return
 
     def _calculate_talk_time_seconds(self) -> float:
         return sum(
@@ -88,29 +116,6 @@ class InterviewSession:
         talk_time_seconds = self._calculate_talk_time_seconds()
         talk_ratio = round((talk_time_seconds / duration_seconds) if duration_seconds else 0.0, 3)
 
-        # Structure history as Q&A pairs
-        structured_history = []
-        current_qa = None
-        qa_counter = 1
-
-        for event in self.history_log:
-            if event.get("type") == "transcript":
-                if current_qa:
-                    structured_history.append(current_qa)
-                
-                current_qa = {
-                    "id": qa_counter,
-                    "timestamp": event.get("timestamp"),
-                    "question": f"{event.get('speaker')}: {event.get('text')}",
-                    "answer": ""
-                }
-                qa_counter += 1
-            elif event.get("type") == "llm_hint" and current_qa:
-                current_qa["answer"] = event.get("text", "")
-        
-        if current_qa:
-            structured_history.append(current_qa)
-
         return {
             "session_id": started_at.strftime("session_%Y%m%d_%H%M%S"),
             "created_at": started_at.isoformat(),
@@ -120,7 +125,7 @@ class InterviewSession:
             "talk_ratio": talk_ratio,
             "persona": getattr(self.llm_client, "persona", None),
             "context": getattr(self.llm_client, "context", ""),
-            "history": structured_history,
+            "history": self.history,
             "raw_history_log": self.history_log,
         }
 
@@ -144,9 +149,12 @@ class InterviewSession:
         self.llm_queue = llm_queue
         self.loop = loop
         self.history_log = []
+        self.history = []
+        self._next_history_id = 1
         self.session_started_at = datetime.utcnow()
         self.session_ended_at = None
         self.current_llm_response = ""
+        self._active_history_id = None
 
         # Initialize audio recorders with user-selected devices
         self.speaker_recorder = SpeakerRecorder(device_index=speaker_index)
@@ -202,7 +210,7 @@ class InterviewSession:
             self.transcriber.toggle_pause()
         print("[INFO] Interview session unfrozen")
 
-    def process_llm_for_transcript(self, transcript_text: str):
+    def process_llm_for_transcript(self, transcript_text: str, history_id: Optional[int] = None):
         """Process transcript through LLM using asyncio Tasks and proper cancellation"""
         # 1. Cancel the currently running LLM task if it exists
         if self._llm_task and not self._llm_task.done():
@@ -210,7 +218,7 @@ class InterviewSession:
 
         async def _run_llm_async():
             try:
-                async for token in self.llm_client.get_suggestion(transcript_text):
+                async for token in self.llm_client.get_suggestion(transcript_text, request_id=history_id):
                     pass  # Tokens are pushed to the queue inside get_suggestion
             except asyncio.CancelledError:
                 print("[INFO] LLM task cancelled by a newer request.")
@@ -251,13 +259,20 @@ async def transcript_worker(transcript_queue: asyncio.Queue):
             session.record_history_event(transcript_data)
 
             if not session.is_frozen:
+                if transcript_data.get("type") == "transcript":
+                    history_entry = session.append_history_question(
+                        timestamp=transcript_data.get("timestamp", datetime.utcnow().isoformat()),
+                        question=transcript_data.get("text", "").strip(),
+                    )
+                    transcript_data["history_id"] = history_entry["id"]
+
                 await manager.broadcast(transcript_data)
 
                 # Trigger LLM processing for new transcript
                 if transcript_data.get("type") == "transcript":
                     text = transcript_data.get("text", "")
                     if text.strip():
-                        session.process_llm_for_transcript(text)
+                        session.process_llm_for_transcript(text, history_id=transcript_data.get("history_id"))
 
         except Exception as e:
             print(f"[ERROR] Transcript worker error: {e}")
@@ -276,6 +291,7 @@ async def llm_worker(llm_queue: asyncio.Queue):
             if not session.is_frozen:
                 if llm_data.get("type") == "llm_token":
                     token = llm_data.get("token", "")
+                    history_id = llm_data.get("history_id")
                     current_response += token
                     session.current_llm_response = current_response
 
@@ -283,9 +299,11 @@ async def llm_worker(llm_queue: asyncio.Queue):
                     await manager.broadcast({
                         "type": "llm_hint",
                         "text": token,
-                        "is_streaming": True
+                        "is_streaming": True,
+                        "history_id": history_id,
                     })
                 elif llm_data.get("type") == "llm_hint" and llm_data.get("clear"):
+                    history_id = llm_data.get("history_id")
                     current_response = ""
                     session.current_llm_response = ""
 
@@ -293,16 +311,20 @@ async def llm_worker(llm_queue: asyncio.Queue):
                         "type": "llm_hint",
                         "text": "",
                         "clear": True,
-                        "is_streaming": False
+                        "is_streaming": False,
+                        "history_id": history_id,
                     })
                 elif llm_data.get("type") == "llm_complete":
+                    history_id = llm_data.get("history_id")
                     if current_response.strip():
+                        session.update_history_answer(history_id, current_response.strip())
                         session.record_history_event({
                             "type": "llm_hint",
                             "speaker": "llm",
                             "text": current_response.strip(),
                             "timestamp": datetime.utcnow().isoformat(),
                             "is_streaming": False,
+                            "history_id": history_id,
                         })
 
                     # Signal completion
@@ -310,7 +332,8 @@ async def llm_worker(llm_queue: asyncio.Queue):
                         "type": "llm_hint",
                         "text": "",
                         "is_streaming": False,
-                        "complete": True
+                        "complete": True,
+                        "history_id": history_id,
                     })
                     current_response = ""
                     session.current_llm_response = ""

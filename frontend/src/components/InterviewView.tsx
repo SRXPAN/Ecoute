@@ -1,18 +1,17 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Pause, Play, X, Snowflake, EyeOff, Eye, Clock, MessageSquare, Sparkles } from 'lucide-react';
+import { Pause, Play, X, Snowflake, EyeOff, Eye, Clock, MessageSquare, Sparkles, ChevronRight } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import ReactMarkdown from 'react-markdown';
-import { InterviewSession } from '../App';
+import { InterviewHistoryEntry } from '../App';
 
 interface InterviewViewProps {
   onEndSession: () => void;
   onFreeze: () => void;
   onUnfreeze: () => void;
   isFrozen: boolean;
-  sessions: InterviewSession[];
-  currentSessionId: string | null;
+  historyEntries: InterviewHistoryEntry[];
+  activeHistoryId: number | null;
   isSpeakingTooFast: boolean;
-  sendMessage?: (message: any) => void;
   initialPersona?: string;
 }
 
@@ -21,28 +20,43 @@ export const InterviewView = ({
   onFreeze,
   onUnfreeze,
   isFrozen,
-  sessions,
-  currentSessionId,
+  historyEntries,
+  activeHistoryId,
   isSpeakingTooFast,
-  sendMessage,
   initialPersona = 'Short Bullets',
 }: InterviewViewProps) => {
   const [isStealthEnabled, setIsStealthEnabled] = useState(false);
   const [stealthStatus, setStealthStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [showSpeakSlower, setShowSpeakSlower] = useState(false);
-  const [activePersona, setActivePersona] = useState(initialPersona);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const activePersona = initialPersona;
+  const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'active' | 'history'>('active');
 
-  // Automatically select the latest session when it changes
   useEffect(() => {
-    if (sessions.length > 0 && (!selectedSessionId || selectedSessionId === sessions[1]?.id)) {
-      setSelectedSessionId(sessions[0].id);
+    if (historyEntries.length > 0 && selectedHistoryId === null) {
+      setSelectedHistoryId(historyEntries[historyEntries.length - 1].id);
     }
-  }, [sessions, selectedSessionId]);
+  }, [historyEntries, selectedHistoryId]);
 
-  const selectedSession = useMemo(() => {
-    return sessions.find(s => s.id === selectedSessionId) || sessions[0];
-  }, [sessions, selectedSessionId]);
+  const activeEntry = useMemo(() => {
+    if (activeHistoryId !== null) {
+      return historyEntries.find((entry) => entry.id === activeHistoryId) || null;
+    }
+
+    return historyEntries[historyEntries.length - 1] || null;
+  }, [historyEntries, activeHistoryId]);
+
+  const selectedEntry = useMemo(() => {
+    if (viewMode === 'active') {
+      return activeEntry;
+    }
+
+    if (selectedHistoryId !== null) {
+      return historyEntries.find((entry) => entry.id === selectedHistoryId) || activeEntry;
+    }
+
+    return activeEntry;
+  }, [historyEntries, selectedHistoryId, viewMode, activeEntry]);
 
   useEffect(() => {
     if (!isSpeakingTooFast) {
@@ -133,39 +147,42 @@ export const InterviewView = ({
         </div>
       )}
 
-      {/* Main Content Area: Sidebar + Active View */}
+      {/* Main Content Area: Sidebar + Detail View */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar: Session History */}
-        <div className="w-64 bg-slate-800/50 border-r border-slate-700 flex flex-col shrink-0">
+        {/* Sidebar: Question History */}
+        <div className="w-72 bg-slate-800/50 border-r border-slate-700 flex flex-col shrink-0">
           <div className="p-4 border-b border-slate-700">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <Clock size={14} /> History
+              <Clock size={14} /> Interview History
             </h3>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-2">
-            {sessions.length === 0 ? (
+            {historyEntries.length === 0 ? (
               <p className="text-slate-600 text-xs text-center mt-8 italic">No entries yet</p>
             ) : (
-              sessions.map((session) => (
+              historyEntries.map((entry) => (
                 <button
-                  key={session.id}
-                  onClick={() => setSelectedSessionId(session.id)}
+                  key={entry.id}
+                  onClick={() => {
+                    setSelectedHistoryId(entry.id);
+                    setViewMode('history');
+                  }}
                   className={`w-full text-left p-3 rounded-xl transition-all border ${
-                    selectedSessionId === session.id
+                    selectedHistoryId === entry.id && viewMode === 'history'
                       ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-100'
                       : 'border-transparent hover:bg-slate-700/50 text-slate-400'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] font-mono opacity-60">
-                      {new Date(session.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>
-                    {session.id === currentSessionId && (
+                    {entry.id === activeHistoryId && (
                       <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></span>
                     )}
                   </div>
                   <p className="text-xs font-medium truncate leading-relaxed">
-                    {session.transcript.replace(/^(Interviewer|Me): /, '')}
+                    {entry.question || 'Untitled question'}
                   </p>
                 </button>
               ))
@@ -173,47 +190,73 @@ export const InterviewView = ({
           </div>
         </div>
 
-        {/* Active Session Content */}
+        {/* Active / History Detail Content */}
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/50 p-6 gap-6">
-          {selectedSession ? (
+          {selectedEntry ? (
             <>
-              {/* Transcript Section */}
-              <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex items-center gap-2 mb-3">
-                  <MessageSquare size={16} className="text-slate-400" />
-                  <h3 className="font-bold text-slate-400 text-xs uppercase tracking-widest">
-                    Transcript
-                  </h3>
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-800/60 px-4 py-3 shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setViewMode('active')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors ${
+                      viewMode === 'active' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    Active
+                  </button>
+                  <button
+                    onClick={() => setViewMode('history')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors ${
+                      viewMode === 'history' ? 'bg-slate-200 text-slate-900' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    History
+                  </button>
                 </div>
-                <div className="flex-1 bg-slate-800/80 rounded-2xl border border-slate-700 p-5 overflow-y-auto shadow-inner">
-                  <p className="text-slate-100 leading-relaxed whitespace-pre-wrap text-sm">
-                    {selectedSession.transcript}
-                  </p>
+
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <ChevronRight size={14} />
+                  <span>{selectedEntry.id === activeHistoryId ? 'Streaming answer' : 'Past question'}</span>
                 </div>
               </div>
 
-              {/* AI Hint Section */}
-              <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={16} className="text-indigo-400" />
-                    <h3 className="font-bold text-indigo-400 text-xs uppercase tracking-widest">
-                      AI Suggestion
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 flex-1 min-h-0">
+                <div className="flex flex-col min-h-0">
+                  <div className="flex items-center gap-2 mb-3">
+                    <MessageSquare size={16} className="text-slate-400" />
+                    <h3 className="font-bold text-slate-400 text-xs uppercase tracking-widest">
+                      Question
                     </h3>
                   </div>
-                  {selectedSession.id === currentSessionId && !selectedSession.isComplete && (
-                    <span className="text-[10px] text-indigo-400 animate-pulse font-bold tracking-tighter">GENERATING...</span>
-                  )}
+                  <div className="flex-1 bg-slate-800/80 rounded-2xl border border-slate-700 p-5 overflow-y-auto shadow-inner">
+                    <p className="text-slate-100 leading-relaxed whitespace-pre-wrap text-sm">
+                      {selectedEntry.question}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1 rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-5 shadow-lg shadow-indigo-950/20 overflow-y-auto">
-                  <div className="text-slate-100 leading-relaxed">
-                    {selectedSession.aiResponse ? (
-                      <ReactMarkdown className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-li:my-1">
-                        {selectedSession.aiResponse}
-                      </ReactMarkdown>
-                    ) : (
-                      <p className="text-slate-600 italic text-sm">Waiting for response...</p>
+
+                <div className="flex flex-col min-h-0">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-indigo-400" />
+                      <h3 className="font-bold text-indigo-400 text-xs uppercase tracking-widest">
+                        Answer
+                      </h3>
+                    </div>
+                    {selectedEntry.id === activeHistoryId && selectedEntry.answer && !selectedEntry.isComplete && (
+                      <span className="text-[10px] text-indigo-400 animate-pulse font-bold tracking-tighter">GENERATING...</span>
                     )}
+                  </div>
+                  <div className="flex-1 rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-5 shadow-lg shadow-indigo-950/20 overflow-y-auto">
+                    <div className="text-slate-100 leading-relaxed">
+                      {selectedEntry.answer ? (
+                        <ReactMarkdown className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-li:my-1">
+                          {selectedEntry.answer}
+                        </ReactMarkdown>
+                      ) : (
+                        <p className="text-slate-600 italic text-sm">Waiting for response...</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

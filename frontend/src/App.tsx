@@ -4,22 +4,27 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { SetupView } from './components/SetupView';
 import { InterviewView } from './components/InterviewView';
 
-export interface InterviewSession {
-  id: string;
-  transcript: string;
-  aiResponse: string;
+export interface InterviewHistoryEntry {
+  id: number;
   timestamp: string;
+  question: string;
+  answer: string;
   isComplete: boolean;
 }
 
 function App() {
   const [isInterviewActive, setIsInterviewActive] = useState(false);
   const [isFrozen, setIsFrozen] = useState(false);
-  const [sessions, setSessions] = useState<InterviewSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [historyEntries, setHistoryEntries] = useState<InterviewHistoryEntry[]>([]);
+  const [activeHistoryId, setActiveHistoryId] = useState<number | null>(null);
   const [isSpeakingTooFast, setIsSpeakingTooFast] = useState(false);
   const fastSpeechTimeoutRef = useRef<number | null>(null);
   const processedMessagesRef = useRef<Set<string>>(new Set());
+  const activeHistoryIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    activeHistoryIdRef.current = activeHistoryId;
+  }, [activeHistoryId]);
 
   // Handle window resizing based on mode
   useEffect(() => {
@@ -54,19 +59,21 @@ function App() {
         }
         processedMessagesRef.current.add(messageId);
 
-        const newSessionId = `session-${message.timestamp}`;
-        setCurrentSessionId(newSessionId);
-        
-        setSessions((prev) => [
-          {
-            id: newSessionId,
-            transcript: `${message.speaker}: ${message.text}`,
-            aiResponse: '',
+        const historyId = Number(message.history_id ?? Date.parse(message.timestamp));
+        setActiveHistoryId(historyId);
+
+        setHistoryEntries((prev) => {
+          const nextEntry: InterviewHistoryEntry = {
+            id: historyId,
             timestamp: message.timestamp,
+            question: message.text,
+            answer: '',
             isComplete: false,
-          },
-          ...prev,
-        ]);
+          };
+
+          const next = [...prev.filter((entry) => entry.id !== historyId), nextEntry];
+          return next.sort((left, right) => left.id - right.id);
+        });
 
         if (message.is_speaking_too_fast) {
           setIsSpeakingTooFast(true);
@@ -83,25 +90,28 @@ function App() {
         break;
 
       case 'llm_hint':
-        setSessions((prev) => {
+        setHistoryEntries((prev) => {
           if (prev.length === 0) return prev;
-          
-          const newSessions = [...prev];
-          // We always update the latest (first in our array) session for hints
-          const activeIndex = 0; 
-          
+
+          const targetHistoryId = Number(message.history_id ?? activeHistoryIdRef.current ?? prev[prev.length - 1]?.id);
+          const activeIndex = prev.findIndex((entry) => entry.id === targetHistoryId);
+
+          if (activeIndex < 0) return prev;
+
+          const next = [...prev];
+
           if (message.clear) {
-            newSessions[activeIndex] = { ...newSessions[activeIndex], aiResponse: '' };
+            next[activeIndex] = { ...next[activeIndex], answer: '', isComplete: false };
           } else if (message.is_streaming) {
-            newSessions[activeIndex] = { 
-              ...newSessions[activeIndex], 
-              aiResponse: newSessions[activeIndex].aiResponse + message.text 
+            next[activeIndex] = { 
+              ...next[activeIndex], 
+              answer: next[activeIndex].answer + message.text 
             };
           } else if (message.complete) {
-            newSessions[activeIndex] = { ...newSessions[activeIndex], isComplete: true };
+            next[activeIndex] = { ...next[activeIndex], isComplete: true };
           }
           
-          return newSessions;
+          return next;
         });
         break;
 
@@ -142,8 +152,8 @@ function App() {
     
     // Reset session state
     processedMessagesRef.current.clear();
-    setSessions([]);
-    setCurrentSessionId(null);
+    setHistoryEntries([]);
+    setActiveHistoryId(null);
     setIsSpeakingTooFast(false);
 
     sendMessage({
@@ -161,8 +171,8 @@ function App() {
     sendMessage({ action: 'stop_interview' });
     setIsInterviewActive(false);
     setIsFrozen(false);
-    setSessions([]);
-    setCurrentSessionId(null);
+    setHistoryEntries([]);
+    setActiveHistoryId(null);
     setIsSpeakingTooFast(false);
 
     if (fastSpeechTimeoutRef.current) {
@@ -218,10 +228,9 @@ function App() {
           onFreeze={handleFreeze}
           onUnfreeze={handleUnfreeze}
           isFrozen={isFrozen}
-          sessions={sessions}
-          currentSessionId={currentSessionId}
+          historyEntries={historyEntries}
+          activeHistoryId={activeHistoryId}
           isSpeakingTooFast={isSpeakingTooFast}
-          sendMessage={sendMessage}
           initialPersona={initialPersona}
         />
       )}

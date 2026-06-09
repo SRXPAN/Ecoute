@@ -1,5 +1,5 @@
 import os
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 import asyncio
@@ -92,7 +92,7 @@ class LLMClient:
             {'role': 'system', 'content': self.system_prompt}
         ] + recent_history
 
-    async def get_suggestion(self, interviewer_question: str) -> AsyncGenerator[str, None]:
+    async def get_suggestion(self, interviewer_question: str, request_id: Optional[int] = None) -> AsyncGenerator[str, None]:
         """Stream AI suggestions token by token"""
         if not interviewer_question or not interviewer_question.strip():
             return
@@ -125,7 +125,8 @@ class LLMClient:
                         self.llm_queue.put_nowait({
                             "type": "llm_hint",
                             "text": "",
-                            "clear": True
+                            "clear": True,
+                            "history_id": request_id,
                         })
                         clear_sent = True
 
@@ -135,7 +136,8 @@ class LLMClient:
                     if self.llm_queue:
                         self.llm_queue.put_nowait({
                             "type": "llm_token",
-                            "token": token
+                            "token": token,
+                            "history_id": request_id,
                         })
 
                     yield token
@@ -147,7 +149,8 @@ class LLMClient:
             # Signal completion
             if self.llm_queue:
                 self.llm_queue.put_nowait({
-                    "type": "llm_complete"
+                    "type": "llm_complete",
+                    "history_id": request_id,
                 })
 
         except asyncio.CancelledError:
