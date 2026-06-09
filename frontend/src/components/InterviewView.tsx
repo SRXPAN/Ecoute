@@ -250,7 +250,7 @@ export const InterviewView = ({
                   <div className="flex-1 rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-5 shadow-lg shadow-indigo-950/20 overflow-y-auto">
                     <div className="text-slate-100 leading-relaxed">
                       {selectedEntry.answer ? (
-                        <ReactMarkdown className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-li:my-1">
+                        <ReactMarkdown className="prose prose-invert prose-sm max-w-none leading-relaxed text-slate-300">
                           {selectedEntry.answer}
                         </ReactMarkdown>
                       ) : (
