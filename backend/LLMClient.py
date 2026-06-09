@@ -19,7 +19,7 @@ class LLMClient:
         self.persona = persona
         self.llm_queue = llm_queue  # asyncio.Queue for streaming output
         self.model_name = 'local-model'
-        self.context = self._load_interview_context()
+        self.context = ""
         self.system_prompt = self._build_system_prompt()
         self.history = []
         self.max_history_messages = 10
@@ -30,19 +30,6 @@ class LLMClient:
         )
 
         print(f"[INFO] Local LLM client initialized successfully (Persona: {self.persona}), connecting to LM Studio at http://127.0.0.1:1234")
-
-    def _load_interview_context(self) -> str:
-        context_file = "temp_context.txt"
-        if os.path.exists(context_file):
-            try:
-                with open(context_file, "r", encoding="utf-8") as f:
-                    context = f.read().strip()
-                    if context:
-                        print(f"[INFO] Loaded interview context ({len(context)} characters)")
-                        return context
-            except Exception as e:
-                print(f"[WARNING] Failed to load context file: {e}")
-        return ""
 
     def _build_system_prompt(self) -> str:
         """
@@ -78,7 +65,7 @@ class LLMClient:
                 "professionally, and naturally in the language of the conversation."
             )
 
-        context_str = self.context if self.context else "[Контекст не надано / No context provided]"
+        context_str = self.context[:15000] if self.context else "[Контекст не надано / No context provided]"
         return f"{base_prompt}{context_handling_rule}\n\nCONTEXT (Досвід користувача):\n{context_str}"
 
     def _trim_history(self):

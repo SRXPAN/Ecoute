@@ -439,7 +439,7 @@ async def get_audio_devices():
 
 
 @app.get("/api/sessions")
-async def list_sessions():
+def list_sessions():
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
     sessions = []
@@ -461,7 +461,7 @@ async def list_sessions():
 
 
 @app.get("/api/sessions/{filename}")
-async def get_session(filename: str):
+def get_session(filename: str):
     safe_filename = Path(filename).name
     if safe_filename != filename or not safe_filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Invalid session filename")
@@ -478,7 +478,7 @@ async def get_session(filename: str):
 
 
 @app.post("/api/parse_job")
-async def parse_job(request: JobUrlRequest):
+def parse_job(request: JobUrlRequest):
     try:
         headers = {
             "User-Agent": (
@@ -722,6 +722,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
 
     except WebSocketDisconnect:
+        if session.is_running:
+            session.stop()
+            session.save_session()
+            print("[INFO] Session auto-saved on disconnect")
         manager.disconnect(websocket)
         print("[INFO] Client disconnected")
     except Exception as e:
