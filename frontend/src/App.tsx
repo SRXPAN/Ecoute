@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { register, unregisterAll } from '@tauri-apps/plugin-global-shortcut';
 import { useWebSocket } from './hooks/useWebSocket';
 import { SetupView } from './components/SetupView';
 import { InterviewView } from './components/InterviewView';
@@ -21,6 +22,37 @@ function App() {
   const fastSpeechTimeoutRef = useRef<number | null>(null);
   const processedMessagesRef = useRef<Set<string>>(new Set());
   const activeHistoryIdRef = useRef<number | null>(null);
+
+  // Global Shortcut for Push-to-Talk
+  useEffect(() => {
+    const setupShortcut = async () => {
+      try {
+        await unregisterAll();
+        await register('CommandOrControl+Alt', (event) => {
+          if (event.state === 'Pressed') {
+            console.log('[Shortcut] PTT Pressed');
+            sendMessage({ action: 'toggle_mic', state: true });
+          } else if (event.state === 'Released') {
+            console.log('[Shortcut] PTT Released');
+            sendMessage({ action: 'toggle_mic', state: false });
+          }
+        });
+        console.log('[Shortcut] CommandOrControl+Alt registered');
+      } catch (error) {
+        console.error('[Shortcut] Registration failed:', error);
+      }
+    };
+
+    if (isInterviewActive) {
+      setupShortcut();
+    } else {
+      unregisterAll();
+    }
+
+    return () => {
+      unregisterAll();
+    };
+  }, [isInterviewActive, sendMessage]);
 
   useEffect(() => {
     activeHistoryIdRef.current = activeHistoryId;

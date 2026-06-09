@@ -677,6 +677,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     "message": "Interview session unfrozen"
                 })
 
+            elif action == "toggle_mic":
+                state = data.get("state", False)
+                if session.transcriber:
+                    session.transcriber.set_mic_active(state)
+                    # Optional: broadcast state back to all clients if needed
+                    await manager.broadcast({
+                        "type": "mic_status",
+                        "active": state
+                    })
+
             elif action == "change_persona":
                 persona = data.get("persona")
                 if persona and session.llm_client:

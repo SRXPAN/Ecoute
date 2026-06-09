@@ -3,7 +3,6 @@ import time
 import os
 from datetime import datetime
 import numpy as np
-import keyboard
 from groq import Groq
 from collections import deque
 import asyncio
@@ -20,6 +19,7 @@ class AudioTranscriber:
         self.mic_recorder = mic_recorder
         self.transcript_queue = transcript_queue  # asyncio.Queue for output
         self.loop = loop
+        self.is_mic_active = False  # Controlled via WebSocket from Tauri
 
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -53,16 +53,15 @@ class AudioTranscriber:
 
         self.is_running = False
         self.is_paused = False
-        print(f"[INFO] Groq-based audio transcriber initialized with WebRTC VAD (Speaker + {'Mic' if mic_recorder else 'No Mic'})")
+        print(f"[INFO] Groq-based audio transcriber initialized (Speaker + {'Mic' if mic_recorder else 'No Mic'})")
 
-    def _is_push_to_talk_active(self) -> bool:
-        """Require Ctrl + Alt to be held before we process microphone audio."""
-        try:
-            return keyboard.is_pressed("ctrl") and keyboard.is_pressed("alt")
-        except Exception:
-            # If the keyboard hook is unavailable, fail closed so we do not
-            # transcribe background noise or accidental keystrokes.
-            return False
+    def set_mic_active(self, state: bool):
+        """Toggle microphone recording state (controlled via WebSocket)"""
+        self.is_mic_active = state
+        if not state:
+            self.current_status["Me"] = "🟢 Idle"
+        else:
+            self.current_status["Me"] = "🎙️ Listening"
 
     def _is_speech_detected(self, audio_data: bytes, sample_rate: int, source_name: str) -> bool:
         """
@@ -141,8 +140,8 @@ class AudioTranscriber:
                     audio_data, timestamp = audio_chunk
 
                     # Push-to-talk only applies to the microphone. If the user is
-                    # not holding Ctrl + Alt, discard the audio immediately.
-                    if source_name == "Me" and not self._is_push_to_talk_active():
+                    # not holding the PTT shortcut (sent via WebSocket), discard.
+                    if source_name == "Me" and not self.is_mic_active:
                         if buffer_info["data"]:
                             buffer_info["data"] = b""
                             buffer_info["last_audio_time"] = None

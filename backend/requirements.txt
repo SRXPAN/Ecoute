@@ -9,7 +9,6 @@ python-dotenv
 sounddevice
 openai
 pyinstaller
-keyboard
 PyPDF2
 python-multipart
 requests

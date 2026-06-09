@@ -20,10 +20,14 @@ fn toggle_stealth(window: tauri::Window, enable: bool) -> Result<String, String>
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
+        };
 
         // Get the native window handle
-        let hwnd = window.hwnd().map_err(|e| format!("Failed to get window handle: {}", e))?;
+        let hwnd = window
+            .hwnd()
+            .map_err(|e| format!("Failed to get window handle: {}", e))?;
         let hwnd = HWND(hwnd.0 as *mut std::ffi::c_void);
 
         // Set the display affinity based on enable flag
@@ -52,6 +56,7 @@ fn toggle_stealth(window: tauri::Window, enable: bool) -> Result<String, String>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![greet, toggle_stealth])
         .run(tauri::generate_context!())
