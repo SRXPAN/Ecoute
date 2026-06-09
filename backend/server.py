@@ -70,6 +70,7 @@ class InterviewSession:
         self.session_started_at = None
         self.session_ended_at = None
         self.current_llm_response = ""
+        self._llm_cancel_event = None
 
     def record_history_event(self, event: dict):
         self.history_log.append(event)
@@ -180,16 +181,26 @@ class InterviewSession:
         print("[INFO] Interview session unfrozen")
 
     def process_llm_for_transcript(self, transcript_text: str):
-        """Process transcript through LLM in a separate thread"""
-        def _run_llm():
+        """Process transcript through LLM, cancelling any active generation"""
+        # 1. Cancel existing generation if it's running
+        if getattr(self, '_llm_cancel_event', None):
+            self._llm_cancel_event.set()
+
+        # 2. Create a fresh cancel event for the new thread
+        self._llm_cancel_event = threading.Event()
+
+        def _run_llm(cancel_event):
             try:
-                for token in self.llm_client.get_suggestion(transcript_text):
+                for token in self.llm_client.get_suggestion(transcript_text, cancel_event=cancel_event):
+                    # Double check if cancelled from the outside
+                    if cancel_event.is_set():
+                        break
                     if not self.is_frozen:
                         pass  # Tokens are already being pushed to queue
             except Exception as e:
                 print(f"[ERROR] LLM processing failed: {e}")
 
-        thread = threading.Thread(target=_run_llm, daemon=True)
+        thread = threading.Thread(target=_run_llm, args=(self._llm_cancel_event,), daemon=True)
         thread.start()
 
     def cleanup(self):

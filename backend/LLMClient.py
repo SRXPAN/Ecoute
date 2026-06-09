@@ -87,7 +87,7 @@ class LLMClient:
             {'role': 'user', 'content': interviewer_question}
         ]
 
-    def get_suggestion(self, interviewer_question: str) -> Generator[str, None, None]:
+    def get_suggestion(self, interviewer_question: str, cancel_event=None) -> Generator[str, None, None]:
         """Stream AI suggestions token by token"""
         if not interviewer_question or len(interviewer_question.strip()) < 10:
             return
@@ -100,12 +100,17 @@ class LLMClient:
                 model=self.model_name,
                 messages=messages,
                 stream=True,
-                max_tokens=600,
+                max_tokens=200,
                 temperature=0.3
             )
 
             full_response = ""
             for chunk in stream:
+                # IMMEDIATELY ABORT IF A NEWER REQUEST CANCELLED THIS ONE
+                if cancel_event and cancel_event.is_set():
+                    print("[INFO] LLM stream cancelled by a newer request.")
+                    break
+
                 if chunk.choices[0].delta.content is not None:
                     token = chunk.choices[0].delta.content
 
