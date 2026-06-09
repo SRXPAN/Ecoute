@@ -110,27 +110,21 @@ class LLMClient:
                     token = chunk.choices[0].delta.content
 
                     if not clear_sent and self.llm_queue:
-                        try:
-                            self.llm_queue.put_nowait({
-                                "type": "llm_hint",
-                                "text": "",
-                                "clear": True
-                            })
-                            clear_sent = True
-                        except Exception as e:
-                            print(f"[WARNING] Failed to push LLM clear signal to queue: {e}")
+                        self.llm_queue.put_nowait({
+                            "type": "llm_hint",
+                            "text": "",
+                            "clear": True
+                        })
+                        clear_sent = True
 
                     full_response += token
 
                     # Push to async queue if available
                     if self.llm_queue:
-                        try:
-                            self.llm_queue.put_nowait({
-                                "type": "llm_token",
-                                "token": token
-                            })
-                        except Exception as e:
-                            print(f"[WARNING] Failed to push LLM token to queue: {e}")
+                        self.llm_queue.put_nowait({
+                            "type": "llm_token",
+                            "token": token
+                        })
 
                     yield token
 
@@ -141,12 +135,9 @@ class LLMClient:
 
             # Signal completion
             if self.llm_queue:
-                try:
-                    self.llm_queue.put_nowait({
-                        "type": "llm_complete"
-                    })
-                except Exception as e:
-                    print(f"[WARNING] Failed to push LLM completion signal to queue: {e}")
+                self.llm_queue.put_nowait({
+                    "type": "llm_complete"
+                })
 
         except asyncio.CancelledError:
             print("[INFO] LLM stream cancelled by a newer request.")

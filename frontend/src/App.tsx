@@ -11,6 +11,7 @@ function App() {
   const [llmHint, setLlmHint] = useState('');
   const [isSpeakingTooFast, setIsSpeakingTooFast] = useState(false);
   const fastSpeechTimeoutRef = useRef<number | null>(null);
+  const processedMessagesRef = useRef<Set<string>>(new Set());
 
   // Handle window resizing based on mode
   useEffect(() => {
@@ -37,6 +38,14 @@ function App() {
 
     switch (message.type) {
       case 'transcript':
+        // Deduplication logic to prevent double-appending
+        const messageId = `${message.timestamp}-${message.text}`;
+        if (processedMessagesRef.current.has(messageId)) {
+          console.log('[App] Skipping duplicate transcript message:', messageId);
+          return;
+        }
+        processedMessagesRef.current.add(messageId);
+
         setTranscript((prev) => {
           const newText = `${message.speaker}: ${message.text}\n\n`;
           return newText + prev;
@@ -100,6 +109,13 @@ function App() {
   const handleStartInterview = (config: any) => {
     console.log('[App] Starting interview with config:', config);
     setInitialPersona(config.persona || 'Short Bullets');
+    
+    // Reset session state
+    processedMessagesRef.current.clear();
+    setTranscript('');
+    setLlmHint('');
+    setIsSpeakingTooFast(false);
+
     sendMessage({
       action: 'start_interview',
       mic_index: config.mic_index,
@@ -108,9 +124,6 @@ function App() {
       context: config.context
     });
     setIsInterviewActive(true);
-    setTranscript('');
-    setLlmHint('');
-    setIsSpeakingTooFast(false);
   };
 
   const handleEndSession = () => {
